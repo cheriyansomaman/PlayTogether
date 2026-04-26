@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  couchbase:
+    image: couchbase:community-7.2.0
+    container_name: playtogether-couchbase
+    ports:
+      - "8091-8096:8091-8096"
+      - "11210:11210"
+    environment:
+      - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
+      - COUCHBASE_ADMINISTRATOR_PASSWORD=password123
+    volumes:
+      - couchbase_data:/opt/couchbase/var
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/ui/index.html"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: playtogether-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - COUCHBASE_URL=couchbase://couchbase
+      - COUCHBASE_USERNAME=Administrator
+      - COUCHBASE_PASSWORD=password123
+      - COUCHBASE_BUCKET=playtogether
+      - JWT_SECRET=change-this-secret-in-production
+      - PORT=8080
+    depends_on:
+      couchbase:
+        condition: service_healthy
+    restart: on-failure
+
+  frontend:
+    build: ./frontend
+    container_name: playtogether-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  couchbase_data:
