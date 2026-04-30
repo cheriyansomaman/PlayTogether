@@ -15,6 +15,7 @@ import CreateTeamModal from '../components/modals/CreateTeamModal'
 import AddEventMemberModal from '../components/modals/AddEventMemberModal'
 import BulkAddMembersModal from '../components/modals/BulkAddMembersModal'
 import JoinRequestModal, { DEFAULT_QUESTIONS } from '../components/modals/JoinRequestModal'
+import ConfirmModal from '../components/modals/ConfirmModal'
 
 const QUESTION_TYPES = ['text', 'number', 'textarea', 'tags', 'team-select']
 
@@ -29,6 +30,20 @@ const DEFAULT_POINT_SYSTEM = [
   { rank: 3, points: 1 },
 ]
 
+const DEFAULT_TEMPLATE_FIELDS = [
+  { id: 'full_name',  label: 'Full Name',     required: true  },
+  { id: 'team_name',  label: 'Team Name',     required: true  },
+  { id: 'age',        label: 'Age',           required: true  },
+  { id: 'phone',      label: 'Phone Number',  required: false },
+  { id: 'email',      label: 'Email Address', required: false },
+  { id: 'address',    label: 'Address',       required: false },
+  { id: 'note',       label: 'Note',          required: false },
+]
+const DEFAULT_TEMPLATE_UNIQUE = ['full_name', 'age']
+
+const randomId = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')
+
 // ── Settings tab ──────────────────────────────────────────────────────────────
 function SettingsTab({ event, onSave }) {
   const [questions, setQuestions] = useState(
@@ -36,6 +51,12 @@ function SettingsTab({ event, onSave }) {
   )
   const [pointRules, setPointRules] = useState(
     event.point_system?.length > 0 ? event.point_system : DEFAULT_POINT_SYSTEM
+  )
+  const [templateFields, setTemplateFields] = useState(
+    event.user_template_fields?.length > 0 ? event.user_template_fields : DEFAULT_TEMPLATE_FIELDS
+  )
+  const [templateUnique, setTemplateUnique] = useState(
+    event.user_template_unique?.length > 0 ? event.user_template_unique : DEFAULT_TEMPLATE_UNIQUE
   )
   const [saving, setSaving] = useState(false)
 
@@ -51,7 +72,7 @@ function SettingsTab({ event, onSave }) {
   }
 
   const addQuestion = () =>
-    setQuestions((p) => [...p, { id: crypto.randomUUID(), label: '', type: 'text', required: true }])
+    setQuestions((p) => [...p, { id: randomId(), label: '', type: 'text', required: true }])
 
   const removeQuestion = (idx) => setQuestions((p) => p.filter((_, i) => i !== idx))
 
@@ -64,6 +85,48 @@ function SettingsTab({ event, onSave }) {
   const removeRank = (idx) =>
     setPointRules((p) => p.filter((_, i) => i !== idx).map((r, i) => ({ ...r, rank: i + 1 })))
 
+  // ── Template field helpers ──
+  const updateTemplateField = (idx, field, val) =>
+    setTemplateFields((p) => p.map((f, i) => i === idx ? { ...f, [field]: val } : f))
+
+  const moveTemplateField = (idx, dir) => {
+    const next = [...templateFields]
+    const swap = idx + dir
+    if (swap < 0 || swap >= next.length) return
+    ;[next[idx], next[swap]] = [next[swap], next[idx]]
+    setTemplateFields(next)
+  }
+
+  const addTemplateField = () =>
+    setTemplateFields((p) => [...p, { id: randomId(), label: '', required: false }])
+
+  const removeTemplateField = (idx) => {
+    const removed = templateFields[idx]
+    setTemplateFields((p) => p.filter((_, i) => i !== idx))
+    setTemplateUnique((p) => p.filter((id) => id !== removed.id))
+  }
+
+  const toggleTemplateUnique = (fieldId) =>
+    setTemplateUnique((p) => p.includes(fieldId) ? p.filter((id) => id !== fieldId) : [...p, fieldId])
+
+  const downloadCSVTemplate = () => {
+    if (templateFields.length === 0) return
+    const headers = templateFields.map((f) => {
+      const label = f.label || 'Unnamed'
+      return f.required ? label : `${label} (Optional)`
+    })
+    const csv = headers.join(',') + '\n'
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `user_template_${(event.name || 'event').replace(/\s+/g, '_')}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   const handleSave = async () => {
     if (questions.some((q) => !q.label.trim())) {
       toast.error('All questions must have a label')
@@ -74,6 +137,8 @@ function SettingsTab({ event, onSave }) {
       const { data } = await updateEventSettings(event.id, {
         join_questions: questions,
         point_system: pointRules,
+        user_template_fields: templateFields,
+        user_template_unique: templateUnique,
       })
       toast.success('Settings saved')
       onSave(data)
@@ -230,6 +295,128 @@ function SettingsTab({ event, onSave }) {
         </div>
       </div>
 
+      {/* ── User Template ── */}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-white mb-1">User Template</h2>
+            <p className="text-sm text-slate-400">
+              Configure the fields for the CSV template used when importing users into this event.
+              Required fields are marked with * in the downloaded file.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary shrink-0 flex items-center gap-1.5"
+            onClick={downloadCSVTemplate}
+            disabled={templateFields.length === 0}
+            title="Download CSV template"
+          >
+            ↓ Download Template
+          </button>
+        </div>
+
+        {/* Fields list */}
+        <div className="space-y-2">
+          {templateFields.map((f, idx) => (
+            <div key={f.id} className="card p-3 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <div className="flex-1">
+                <input
+                  className="input"
+                  value={f.label}
+                  onChange={(e) => updateTemplateField(idx, 'label', e.target.value)}
+                  placeholder="Field name"
+                />
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={f.required}
+                    onChange={(e) => updateTemplateField(idx, 'required', e.target.checked)}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  <span className="text-xs text-slate-400">Required</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => moveTemplateField(idx, -1)}
+                  disabled={idx === 0}
+                  className="text-slate-400 hover:text-white disabled:opacity-30 px-1"
+                  title="Move up"
+                >↑</button>
+                <button
+                  type="button"
+                  onClick={() => moveTemplateField(idx, 1)}
+                  disabled={idx === templateFields.length - 1}
+                  className="text-slate-400 hover:text-white disabled:opacity-30 px-1"
+                  title="Move down"
+                >↓</button>
+                <button
+                  type="button"
+                  onClick={() => removeTemplateField(idx)}
+                  className="text-red-400 hover:text-red-300 px-1"
+                  title="Remove field"
+                >🗑️</button>
+              </div>
+            </div>
+          ))}
+          {templateFields.length === 0 && (
+            <p className="text-sm text-slate-500 text-center py-4">No fields — add one below.</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button type="button" className="btn-secondary" onClick={addTemplateField}>+ Add Field</button>
+          <button
+            type="button"
+            className="btn-secondary text-slate-500 hover:text-white"
+            onClick={() => { setTemplateFields(DEFAULT_TEMPLATE_FIELDS); setTemplateUnique(DEFAULT_TEMPLATE_UNIQUE) }}
+          >
+            Reset to Defaults
+          </button>
+        </div>
+
+        {/* Uniqueness constraint */}
+        {templateFields.length > 0 && (
+          <div className="card p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-white">Uniqueness Constraint</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                A row is considered a duplicate when <em>all</em> checked fields match an existing record.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {templateFields.filter((f) => f.label.trim()).map((f) => (
+                <label key={f.id} className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={templateUnique.includes(f.id)}
+                    onChange={() => toggleTemplateUnique(f.id)}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  <span className="text-sm text-slate-300">{f.label}</span>
+                </label>
+              ))}
+            </div>
+            {templateUnique.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Unique key:{' '}
+                <span className="text-slate-300">
+                  {templateFields
+                    .filter((f) => templateUnique.includes(f.id) && f.label.trim())
+                    .map((f) => f.label)
+                    .join(' + ')}
+                </span>
+              </p>
+            )}
+            {templateUnique.length === 0 && (
+              <p className="text-xs text-amber-400">No uniqueness constraint — all rows will be imported.</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="flex justify-end">
         <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Settings'}
@@ -243,9 +430,9 @@ const GAME_STATUS_FLOW  = { scheduled: 'active', active: 'completed' }
 const GAME_STATUS_LABEL = { scheduled: 'Start', active: 'Finish' }
 
 const ROLE_BADGE = {
-  admin:  'bg-purple-500/20 text-purple-300 border border-purple-500/30',
-  member: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
-  viewer: 'bg-slate-500/40 text-slate-400 border border-slate-500/40',
+  admin:       'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+  coordinator: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
+  viewer:      'bg-slate-500/40 text-slate-400 border border-slate-500/40',
 }
 
 const STATUS_BADGE = {
@@ -519,9 +706,11 @@ export default function EventDetail() {
   const [showShare, setShowShare]       = useState(false)
   const [shareLoading, setShareLoading] = useState(false)
   const [eventResults, setEventResults] = useState([])
+  const [confirmAction, setConfirmAction] = useState(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   const isEventAdmin  = myRole === 'admin'
-  const isEventMember = myRole === 'admin' || myRole === 'member'
+  const isEventMember = myRole === 'admin' || myRole === 'coordinator'
   const isMember      = myRole !== 'none' && myRole !== null
 
   // Phase 1 — load event + role (always)
@@ -608,6 +797,18 @@ export default function EventDetail() {
     } catch { toast.error('Failed to review request') }
   }
 
+  const handleConfirm = async () => {
+    setConfirmLoading(true)
+    try {
+      await confirmAction.fn()
+      setConfirmAction(null)
+    } catch (err) {
+      toast.error(err.response?.data?.error || confirmAction.errorMsg || 'Action failed')
+    } finally {
+      setConfirmLoading(false)
+    }
+  }
+
   const handleGameStatusChange = async (game) => {
     const next = GAME_STATUS_FLOW[game.status]
     if (!next) return
@@ -617,31 +818,46 @@ export default function EventDetail() {
     } catch { toast.error('Failed to update game') }
   }
 
-  const handleDeleteGame = async (gameId) => {
-    if (!confirm('Delete this game?')) return
-    try {
-      await deleteGame(gameId)
-      setGames((p) => p.filter((g) => g.id !== gameId))
-      toast.success('Game deleted')
-    } catch { toast.error('Failed to delete game') }
+  const handleDeleteGame = (gameId) => {
+    setConfirmAction({
+      title: 'Delete Game',
+      message: 'Delete this game? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      errorMsg: 'Failed to delete game',
+      fn: async () => {
+        await deleteGame(gameId)
+        setGames((p) => p.filter((g) => g.id !== gameId))
+        toast.success('Game deleted')
+      },
+    })
   }
 
-  const handleDeleteTeam = async (teamId) => {
-    if (!confirm('Delete this team?')) return
-    try {
-      await deleteTeam(teamId)
-      setTeams((p) => p.filter((t) => t.id !== teamId))
-      toast.success('Team deleted')
-    } catch { toast.error('Failed to delete team') }
+  const handleDeleteTeam = (teamId) => {
+    setConfirmAction({
+      title: 'Delete Team',
+      message: 'Delete this team? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      errorMsg: 'Failed to delete team',
+      fn: async () => {
+        await deleteTeam(teamId)
+        setTeams((p) => p.filter((t) => t.id !== teamId))
+        toast.success('Team deleted')
+      },
+    })
   }
 
-  const handleRemoveMember = async (m) => {
-    if (!confirm(`Remove ${m.user_name} from this event?`)) return
-    try {
-      await removeEventMember(id, m.user_id)
-      setMembers((p) => p.filter((x) => x.user_id !== m.user_id))
-      toast.success('Member removed')
-    } catch { toast.error('Failed to remove member') }
+  const handleRemoveMember = (m) => {
+    setConfirmAction({
+      title: 'Remove Member',
+      message: `Remove "${m.user_name}" from this event?`,
+      confirmLabel: 'Remove',
+      errorMsg: 'Failed to remove member',
+      fn: async () => {
+        await removeEventMember(id, m.user_id)
+        setMembers((p) => p.filter((x) => x.user_id !== m.user_id))
+        toast.success('Member removed')
+      },
+    })
   }
 
 
@@ -656,15 +872,18 @@ export default function EventDetail() {
     finally { setShareLoading(false) }
   }
 
-  const handleRevokeShare = async () => {
-    if (!confirm('Revoke this share link? Anyone with the URL will lose access.')) return
-    setShareLoading(true)
-    try {
-      await revokeShareLink(id)
-      setEvent((prev) => ({ ...prev, share_token: '' }))
-      toast.success('Share link revoked')
-    } catch { toast.error('Failed to revoke share link') }
-    finally { setShareLoading(false) }
+  const handleRevokeShare = () => {
+    setConfirmAction({
+      title: 'Revoke Share Link',
+      message: 'Revoke this share link? Anyone with the URL will lose access.',
+      confirmLabel: 'Revoke',
+      errorMsg: 'Failed to revoke share link',
+      fn: async () => {
+        await revokeShareLink(id)
+        setEvent((prev) => ({ ...prev, share_token: '' }))
+        toast.success('Share link revoked')
+      },
+    })
   }
 
   const copyShareUrl = () => {
@@ -1294,6 +1513,8 @@ export default function EventDetail() {
       )}
       {modal === 'bulk-member' && (
         <BulkAddMembersModal eventId={id}
+          templateFields={event?.user_template_fields?.length > 0 ? event.user_template_fields : DEFAULT_TEMPLATE_FIELDS}
+          teams={teams}
           onClose={() => setModal(null)}
           onSave={(newMembers) => {
             setMembers((p) => {
@@ -1306,6 +1527,17 @@ export default function EventDetail() {
               return updated
             })
           }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          loading={confirmLoading}
+          onConfirm={handleConfirm}
+          onClose={() => !confirmLoading && setConfirmAction(null)}
         />
       )}
     </div>

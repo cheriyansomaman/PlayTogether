@@ -61,7 +61,7 @@ type EventRole string
 
 const (
 	EventRoleAdmin  EventRole = "admin"
-	EventRoleMember EventRole = "member"
+	EventRoleMember EventRole = "coordinator"
 	EventRoleViewer EventRole = "viewer"
 )
 
@@ -125,22 +125,30 @@ var DefaultPointSystem = []PointRule{
 	{Rank: 3, Points: 1},
 }
 
+type UserTemplateField struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Required bool   `json:"required"`
+}
+
 type Event struct {
-	ID            string         `json:"id"`
-	Type          string         `json:"type"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description,omitempty"`
-	EventType     string         `json:"event_type"`
-	Location      string         `json:"location,omitempty"`
-	StartDate     string         `json:"start_date"`
-	EndDate       string         `json:"end_date,omitempty"`
-	Status        EventStatus    `json:"status"`
-	JoinQuestions []JoinQuestion `json:"join_questions,omitempty"`
-	PointSystem   []PointRule    `json:"point_system,omitempty"`
-	ShareToken    string         `json:"share_token,omitempty"`
-	CreatedBy     string         `json:"created_by"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	ID                 string              `json:"id"`
+	Type               string              `json:"type"`
+	Name               string              `json:"name"`
+	Description        string              `json:"description,omitempty"`
+	EventType          string              `json:"event_type"`
+	Location           string              `json:"location,omitempty"`
+	StartDate          string              `json:"start_date"`
+	EndDate            string              `json:"end_date,omitempty"`
+	Status             EventStatus         `json:"status"`
+	JoinQuestions      []JoinQuestion      `json:"join_questions,omitempty"`
+	PointSystem        []PointRule         `json:"point_system,omitempty"`
+	UserTemplateFields []UserTemplateField `json:"user_template_fields,omitempty"`
+	UserTemplateUnique []string            `json:"user_template_unique,omitempty"`
+	ShareToken         string              `json:"share_token,omitempty"`
+	CreatedBy          string              `json:"created_by"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at"`
 }
 
 // ── Games ─────────────────────────────────────────────────────────────────────

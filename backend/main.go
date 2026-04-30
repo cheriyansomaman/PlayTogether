@@ -55,6 +55,7 @@ func main() {
 	p.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 
 	p.GET("/auth/me", h.Me)
+	p.DELETE("/auth/me", h.DeleteMe)
 	p.GET("/dashboard", h.GetDashboard)
 
 	// Events — read
@@ -119,6 +120,7 @@ func main() {
 	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.RequireRole(models.RoleAdmin))
 	admin.GET("/auth/users", h.ListUsers)
 	admin.POST("/auth/users", h.CreateAdminUser)
+	admin.DELETE("/auth/users/:id", h.DeleteUser)
 
 	// Any authenticated user can create an event; they become its event admin automatically
 	p.POST("/events", h.CreateEvent)

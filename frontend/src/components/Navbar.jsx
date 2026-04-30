@@ -1,4 +1,4 @@
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useWS } from '../context/WSContext'
 
@@ -29,7 +29,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2">
-              <span className="text-2xl">🏆</span>
+              <img src="/logo.png" alt="PlayTogether" className="w-8 h-8" />
               <span className="font-bold text-white text-lg">PlayTogether</span>
             </Link>
             {user && (
@@ -50,15 +50,20 @@ export default function Navbar() {
                     {connected ? 'Live' : 'Offline'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`badge badge-${user.role}`}>{user.role}</span>
+                <NavLink
+                  to="/profile"
+                  className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-600/60 transition-colors"
+                >
+                  <span className={`badge badge-${user.role === 'member' ? 'coordinator' : user.role}`}>
+                    {user.role === 'member' ? 'coordinator' : user.role}
+                  </span>
                   <div className="hidden sm:flex flex-col leading-tight">
                     <span className="text-sm text-slate-200">{user.name}</span>
                     {user.username && (
                       <span className="text-xs text-slate-500 font-mono">@{user.username}</span>
                     )}
                   </div>
-                </div>
+                </NavLink>
                 <button onClick={handleLogout} className="btn-secondary btn-sm">
                   Sign out
                 </button>

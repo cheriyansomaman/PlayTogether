@@ -13,7 +13,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		CouchbaseURL:      getEnv("COUCHBASE_URL", "couchbase://localhost?network=external"),
+		CouchbaseURL:      getEnv("COUCHBASE_URL", "couchbase://localhost"),
 		CouchbaseUsername: getEnv("COUCHBASE_USERNAME", "Administrator"),
 		CouchbasePassword: getEnv("COUCHBASE_PASSWORD", "password"),
 		CouchbaseBucket:   getEnv("COUCHBASE_BUCKET", "playtogether"),

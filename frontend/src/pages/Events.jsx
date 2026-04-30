@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useWS } from '../context/WSContext'
 import toast from 'react-hot-toast'
 import CreateEventModal from '../components/modals/CreateEventModal'
+import ConfirmModal from '../components/modals/ConfirmModal'
 
 const eventEmoji = {
   athletics: '🏃', tournament: '🏆', swimming: '🏊', cycling: '🚴',
@@ -190,6 +191,8 @@ export default function Events() {
   const [view, setView]             = useState(() => localStorage.getItem('pt_events_view') || 'grid')
   const [showCreate, setShowCreate] = useState(false)
   const [editEvent, setEditEvent]   = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   const changeView = (v) => { setView(v); localStorage.setItem('pt_events_view', v) }
 
@@ -200,20 +203,37 @@ export default function Events() {
 
   useEffect(() => {
     const subs = [
-      subscribe('event_created',        (msg) => setEvents((p) => [msg.data, ...p])),
+      subscribe('event_created',        (msg) => setEvents((p) => p.some((e) => e.id === msg.data.id) ? p : [msg.data, ...p])),
       subscribe('event_updated',        (msg) => setEvents((p) => p.map((e) => e.id === msg.data.id ? msg.data : e))),
       subscribe('event_status_changed', (msg) => setEvents((p) => p.map((e) => e.id === msg.data.id ? msg.data : e))),
     ]
     return () => subs.forEach((u) => u())
   }, [subscribe])
 
-  const handleDelete = async (id) => {
-    if (!confirm('Delete this event and all its data?')) return
+  const handleConfirm = async () => {
+    setConfirmLoading(true)
     try {
-      await deleteEvent(id)
-      setEvents((p) => p.filter((e) => e.id !== id))
-      toast.success('Event deleted')
-    } catch { toast.error('Failed to delete') }
+      await confirmAction.fn()
+      setConfirmAction(null)
+    } catch (err) {
+      toast.error(err.response?.data?.error || confirmAction.errorMsg || 'Action failed')
+    } finally {
+      setConfirmLoading(false)
+    }
+  }
+
+  const handleDelete = (id) => {
+    setConfirmAction({
+      title: 'Delete Event',
+      message: 'Delete this event and all its data? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      errorMsg: 'Failed to delete',
+      fn: async () => {
+        await deleteEvent(id)
+        setEvents((p) => p.filter((e) => e.id !== id))
+        toast.success('Event deleted')
+      },
+    })
   }
 
   const handleStatusChange = async (ev) => {
@@ -351,6 +371,17 @@ export default function Events() {
             setShowCreate(false)
             setEditEvent(null)
           }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          loading={confirmLoading}
+          onConfirm={handleConfirm}
+          onClose={() => !confirmLoading && setConfirmAction(null)}
         />
       )}
     </div>

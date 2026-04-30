@@ -219,8 +219,10 @@ func (h *Handler) UpdateEventSettings(c *gin.Context) {
 	result.Content(&event)
 
 	var req struct {
-		JoinQuestions []models.JoinQuestion `json:"join_questions"`
-		PointSystem   []models.PointRule    `json:"point_system"`
+		JoinQuestions      []models.JoinQuestion      `json:"join_questions"`
+		PointSystem        []models.PointRule         `json:"point_system"`
+		UserTemplateFields []models.UserTemplateField `json:"user_template_fields"`
+		UserTemplateUnique []string                   `json:"user_template_unique"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -229,6 +231,8 @@ func (h *Handler) UpdateEventSettings(c *gin.Context) {
 
 	event.JoinQuestions = req.JoinQuestions
 	event.PointSystem = req.PointSystem
+	event.UserTemplateFields = req.UserTemplateFields
+	event.UserTemplateUnique = req.UserTemplateUnique
 	event.UpdatedAt = time.Now().UTC()
 
 	if _, err := h.collection.Replace("event::"+id, event, &gocb.ReplaceOptions{Cas: result.Cas()}); err != nil {

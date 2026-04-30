@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
-import { listUsers, createUser } from '../services/api'
+import { listUsers, createUser, deleteUser } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import PasswordInput from '../components/PasswordInput'
+import ConfirmModal from '../components/modals/ConfirmModal'
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'member' })
-  const [saving, setSaving] = useState(false)
+  const { user: currentUser } = useAuth()
+  const [users, setUsers]         = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [showForm, setShowForm]   = useState(false)
+  const [form, setForm]           = useState({ name: '', email: '', password: '', role: 'member' })
+  const [saving, setSaving]       = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null) // user to delete
+  const [deleting, setDeleting]   = useState(false)
 
   useEffect(() => {
     listUsers()
@@ -32,6 +37,21 @@ export default function AdminUsers() {
     }
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await deleteUser(deleteTarget.id)
+      setUsers((p) => p.filter((u) => u.id !== deleteTarget.id))
+      toast.success(`${deleteTarget.name} deleted`)
+      setDeleteTarget(null)
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete user')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) return (
     <div className="flex justify-center py-24">
       <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -49,7 +69,7 @@ export default function AdminUsers() {
 
       {showForm && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Create Admin/Member Account</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">Create Admin/Coordinator Account</h2>
           <form onSubmit={handleCreate} className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Full Name</label>
@@ -67,7 +87,7 @@ export default function AdminUsers() {
               <label className="label">Role</label>
               <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 <option value="admin">Admin</option>
-                <option value="member">Member</option>
+                <option value="member">Coordinator</option>
                 <option value="user">User</option>
               </select>
             </div>
@@ -93,6 +113,7 @@ export default function AdminUsers() {
               <th className="px-4 py-3 text-left hidden md:table-cell">Email</th>
               <th className="px-4 py-3 text-left">Role</th>
               <th className="px-4 py-3 text-left hidden sm:table-cell">Joined</th>
+              <th className="px-4 py-3 w-12" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-600">
@@ -106,16 +127,40 @@ export default function AdminUsers() {
                 </td>
                 <td className="px-4 py-3 text-slate-400 hidden md:table-cell">{u.email}</td>
                 <td className="px-4 py-3">
-                  <span className={`badge badge-${u.role}`}>{u.role}</span>
+                  <span className={`badge badge-${u.role === 'member' ? 'coordinator' : u.role}`}>
+                    {u.role === 'member' ? 'coordinator' : u.role}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-slate-500 hidden sm:table-cell">
                   {new Date(u.created_at).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {u.id !== currentUser?.id && (
+                    <button
+                      className="text-slate-500 hover:text-red-400 transition-colors text-xs px-2 py-1 rounded hover:bg-red-500/10"
+                      onClick={() => setDeleteTarget(u)}
+                      title="Delete user"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Delete User"
+          message={`Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`}
+          confirmLabel="Delete"
+          loading={deleting}
+          onConfirm={handleDelete}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   )
 }

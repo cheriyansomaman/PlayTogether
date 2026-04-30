@@ -44,7 +44,8 @@
   .badge-completed { @apply badge bg-slate-500/20 text-slate-400; }
   .badge-scheduled { @apply badge bg-blue-500/20 text-blue-400; }
   .badge-cancelled { @apply badge bg-red-500/20 text-red-400; }
-  .badge-admin     { @apply badge bg-purple-500/20 text-purple-400; }
-  .badge-member    { @apply badge bg-blue-500/20 text-blue-400; }
-  .badge-user      { @apply badge bg-slate-500/20 text-slate-400; }
+  .badge-admin       { @apply badge bg-purple-500/20 text-purple-400; }
+  .badge-member      { @apply badge bg-blue-500/20 text-blue-400; }
+  .badge-coordinator { @apply badge bg-blue-500/20 text-blue-400; }
+  .badge-user        { @apply badge bg-slate-500/20 text-slate-400; }
 }

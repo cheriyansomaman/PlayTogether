@@ -417,6 +417,64 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+func (h *Handler) DeleteMe(c *gin.Context) {
+	callerID, _ := c.Get("user_id")
+	userID := callerID.(string)
+
+	result, err := h.collection.Get("user::"+userID, nil)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	var user models.User
+	result.Content(&user)
+
+	if _, err := h.collection.Remove("user::"+userID, nil); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete account"})
+		return
+	}
+	if user.Username != "" {
+		h.collection.Remove(usernameIndexKey(user.Username), nil)
+	}
+	if user.Email != "" {
+		h.collection.Remove(emailIndexKey(user.Email), nil)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "account deleted"})
+}
+
+func (h *Handler) DeleteUser(c *gin.Context) {
+	userID := c.Param("id")
+
+	// Prevent self-deletion
+	callerID, _ := c.Get("user_id")
+	if callerID.(string) == userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you cannot delete your own account"})
+		return
+	}
+
+	result, err := h.collection.Get("user::"+userID, nil)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	var user models.User
+	result.Content(&user)
+
+	if _, err := h.collection.Remove("user::"+userID, nil); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user"})
+		return
+	}
+	if user.Username != "" {
+		h.collection.Remove(usernameIndexKey(user.Username), nil)
+	}
+	if user.Email != "" {
+		h.collection.Remove(emailIndexKey(user.Email), nil)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
+}
+
 func generateToken(user models.User, secret string) (string, error) {
 	claims := middleware.Claims{
 		UserID: user.ID,

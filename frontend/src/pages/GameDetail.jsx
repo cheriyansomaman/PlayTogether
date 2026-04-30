@@ -10,6 +10,7 @@ import { useWS } from '../context/WSContext'
 import toast from 'react-hot-toast'
 import RecordResultModal from '../components/modals/RecordResultModal'
 import AddParticipantModal from '../components/modals/AddParticipantModal'
+import ConfirmModal from '../components/modals/ConfirmModal'
 
 const positionBadge = (pos) => {
   if (pos === 1) return '🥇'
@@ -49,6 +50,8 @@ export default function GameDetail() {
   const [loading, setLoading]         = useState(true)
   const [showRecord, setShowRecord]   = useState(false)
   const [showAddParticipant, setShowAddParticipant] = useState(false)
+  const [confirmAction, setConfirmAction] = useState(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
 
   const load = async () => {
     try {
@@ -95,13 +98,30 @@ export default function GameDetail() {
     return () => subs.forEach((u) => u())
   }, [subscribe, id])
 
-  const handleDeleteParticipant = async (pId) => {
-    if (!confirm('Remove this participant?')) return
+  const handleConfirm = async () => {
+    setConfirmLoading(true)
     try {
-      await deleteParticipant(pId)
-      setParticipants((p) => p.filter((x) => x.id !== pId))
-      toast.success('Participant removed')
-    } catch { toast.error('Failed to remove participant') }
+      await confirmAction.fn()
+      setConfirmAction(null)
+    } catch (err) {
+      toast.error(err.response?.data?.error || confirmAction.errorMsg || 'Action failed')
+    } finally {
+      setConfirmLoading(false)
+    }
+  }
+
+  const handleDeleteParticipant = (pId) => {
+    setConfirmAction({
+      title: 'Remove Participant',
+      message: 'Remove this participant from the game?',
+      confirmLabel: 'Remove',
+      errorMsg: 'Failed to remove participant',
+      fn: async () => {
+        await deleteParticipant(pId)
+        setParticipants((p) => p.filter((x) => x.id !== pId))
+        toast.success('Participant removed')
+      },
+    })
   }
 
   const teamOf = (teamId) => teams.find((t) => t.id === teamId)
@@ -400,6 +420,17 @@ export default function GameDetail() {
             else { setResult(r) }
             setShowRecord(false)
           }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          loading={confirmLoading}
+          onConfirm={handleConfirm}
+          onClose={() => !confirmLoading && setConfirmAction(null)}
         />
       )}
     </div>

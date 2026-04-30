@@ -72,7 +72,7 @@ func (h *Handler) AddEventMember(c *gin.Context) {
 	}
 
 	if req.Role != models.EventRoleAdmin && req.Role != models.EventRoleMember && req.Role != models.EventRoleViewer {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be admin, member, or viewer"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be admin, coordinator, or viewer"})
 		return
 	}
 
@@ -201,6 +201,9 @@ type BulkMemberEntry struct {
 	Age       int              `json:"age"`
 	Address   string           `json:"address"`
 	Club      string           `json:"club"`
+	Phone     string           `json:"phone"`
+	Email     string           `json:"email"`
+	Tags      string           `json:"tags"`
 	Role      models.EventRole `json:"role"`
 }
 
@@ -278,10 +281,13 @@ func (h *Handler) BulkAddMembers(c *gin.Context) {
 			FirstName: entry.FirstName,
 			LastName:  entry.LastName,
 			Username:  username,
+			Email:     entry.Email,
 			Role:      models.RoleUser,
 			Age:       entry.Age,
 			Club:      entry.Club,
 			Address:   entry.Address,
+			Phone:     entry.Phone,
+			Tags:      entry.Tags,
 			CreatedAt: now,
 		}
 
@@ -298,10 +304,13 @@ func (h *Handler) BulkAddMembers(c *gin.Context) {
 			EventID:   eventID,
 			UserID:    userID,
 			UserName:  fullName,
+			UserEmail: entry.Email,
 			Username:  username,
 			Age:       entry.Age,
 			Club:      entry.Club,
 			Address:   entry.Address,
+			Phone:     entry.Phone,
+			Tags:      entry.Tags,
 			Role:      role,
 			AddedBy:   callerID.(string),
 			CreatedAt: now,

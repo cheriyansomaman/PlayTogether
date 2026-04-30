@@ -10,6 +10,7 @@ import Events from './pages/Events'
 import EventDetail from './pages/EventDetail'
 import GameDetail from './pages/GameDetail'
 import AdminUsers from './pages/AdminUsers'
+import Profile from './pages/Profile'
 import PublicEvent from './pages/PublicEvent'
 
 function AppRoutes() {
@@ -31,6 +32,7 @@ function AppRoutes() {
               <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
               <Route path="/games/:id" element={<ProtectedRoute><GameDetail /></ProtectedRoute>} />
               <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>

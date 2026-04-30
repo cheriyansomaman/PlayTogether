@@ -28,8 +28,10 @@ export const checkUsername = (data) => api.post('/auth/check-username', data)
 export const previewUsername = (data) => api.post('/auth/preview-username', data)
 export const setPassword = (data) => api.post('/auth/set-password', data)
 export const getMe = () => api.get('/auth/me')
+export const deleteMe = () => api.delete('/auth/me')
 export const createUser = (data) => api.post('/auth/users', data)
 export const listUsers = () => api.get('/auth/users')
+export const deleteUser = (id) => api.delete(`/auth/users/${id}`)
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard')

@@ -103,7 +103,7 @@ function TeamSelect({ teams, value, onChange }) {
   )
 }
 
-const ROLES = ['admin', 'member', 'viewer']
+const ROLES = ['admin', 'coordinator', 'viewer']
 
 function TagChips({ value, onChange }) {
   const [input, setInput] = useState('')
@@ -152,7 +152,7 @@ export default function AddEventMemberModal({ eventId, member, teams = [], onClo
   const [form, setForm] = useState({
     username:  '',
     user_name:  member?.user_name  || '',
-    role:       member?.role       || 'member',
+    role:       member?.role       || 'coordinator',
     age:        member?.age        || '',
     club:       member?.club       || '',
     address:    member?.address    || '',
