@@ -1,15 +1,56 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
 	"net/http"
-	"time"
 
-	"github.com/couchbase/gocb/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
+
+// ── Scan helpers ──────────────────────────────────────────────────────────────
+
+func scanParticipantRows(rows *sql.Rows) (*models.Participant, error) {
+	var p models.Participant
+	var gameID, teamID, email, sport, bibNumber, nationality, createdBy sql.NullString
+	var age sql.NullInt64
+
+	err := rows.Scan(
+		&p.ID, &p.EventID, &gameID, &teamID,
+		&p.Name, &email, &age, &sport, &bibNumber, &nationality, &createdBy,
+		&p.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	p.GameID = gameID.String
+	p.TeamID = teamID.String
+	p.Email = email.String
+	p.Age = int(age.Int64)
+	p.Sport = sport.String
+	p.BibNumber = bibNumber.String
+	p.Nationality = nationality.String
+	p.CreatedBy = createdBy.String
+	return &p, nil
+}
+
+func (h *Handler) getParticipantByID(id string) (*models.Participant, error) {
+	rows, err := h.db.Query(
+		`SELECT id, event_id, game_id, team_id, name, email, age, sport, bib_number, nationality, created_by, created_at
+		 FROM pt_event_game_participants WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, sql.ErrNoRows
+	}
+	return scanParticipantRows(rows)
+}
+
+// ── Request types ─────────────────────────────────────────────────────────────
 
 type CreateParticipantRequest struct {
 	Name        string `json:"name" binding:"required"`
@@ -19,41 +60,43 @@ type CreateParticipantRequest struct {
 	TeamID      string `json:"team_id"`
 	BibNumber   string `json:"bib_number"`
 	Nationality string `json:"nationality"`
+	UserID      string `json:"user_id"`
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListParticipants(c *gin.Context) {
 	eventID := c.Param("id")
 	teamID := c.Query("team_id")
 
-	var query string
-	var params map[string]interface{}
+	const cols = `id, event_id, game_id, team_id, name, email, age, sport, bib_number, nationality, created_by, created_at`
 
+	var rows *sql.Rows
+	var err error
 	if teamID != "" {
-		query = fmt.Sprintf(`SELECT p.* FROM `+"`"+`%s`+"`"+` AS p WHERE p.event_id = $event_id AND p.team_id = $team_id AND p.type = 'participant' ORDER BY p.name ASC`, h.bucket)
-		params = map[string]interface{}{"event_id": eventID, "team_id": teamID}
+		rows, err = h.db.Query(
+			"SELECT "+cols+" FROM pt_event_game_participants WHERE event_id=$1 AND team_id=$2 ORDER BY name ASC",
+			eventID, teamID,
+		)
 	} else {
-		query = fmt.Sprintf(`SELECT p.* FROM `+"`"+`%s`+"`"+` AS p WHERE p.event_id = $event_id AND p.type = 'participant' ORDER BY p.name ASC`, h.bucket)
-		params = map[string]interface{}{"event_id": eventID}
+		rows, err = h.db.Query(
+			"SELECT "+cols+" FROM pt_event_game_participants WHERE event_id=$1 AND game_id IS NULL ORDER BY name ASC",
+			eventID,
+		)
 	}
-
-	rows, err := h.cluster.Query(query, queryOptions(params))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 	defer rows.Close()
 
-	var participants []models.Participant
+	participants := []models.Participant{}
 	for rows.Next() {
-		var p models.Participant
-		if err := rows.Row(&p); err != nil {
+		p, err := scanParticipantRows(rows)
+		if err != nil {
 			continue
 		}
-		participants = append(participants, p)
-	}
-
-	if participants == nil {
-		participants = []models.Participant{}
+		participants = append(participants, *p)
 	}
 	c.JSON(http.StatusOK, participants)
 }
@@ -67,7 +110,9 @@ func (h *Handler) CreateParticipant(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.collection.Get("event::"+eventID, nil); err != nil {
+	var exists bool
+	h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_events WHERE id = $1)", eventID).Scan(&exists)
+	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
 		return
 	}
@@ -78,55 +123,39 @@ func (h *Handler) CreateParticipant(c *gin.Context) {
 		return
 	}
 
-	// Validate team if provided
 	if req.TeamID != "" {
-		if _, err := h.collection.Get("team::"+req.TeamID, nil); err != nil {
+		h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_event_teams WHERE id = $1)", req.TeamID).Scan(&exists)
+		if !exists {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "team not found"})
 			return
 		}
 	}
 
-	userID, _ := c.Get("user_id")
-
-	participant := models.Participant{
-		ID:          uuid.New().String(),
-		Type:        "participant",
-		EventID:     eventID,
-		TeamID:      req.TeamID,
-		Name:        req.Name,
-		Email:       req.Email,
-		Age:         req.Age,
-		Sport:       req.Sport,
-		BibNumber:   req.BibNumber,
-		Nationality: req.Nationality,
-		CreatedBy:   userID.(string),
-		CreatedAt:   time.Now().UTC(),
-	}
-
-	_, err := h.collection.Insert("participant::"+participant.ID, participant, nil)
+	var id string
+	err := h.db.QueryRow(
+		`INSERT INTO pt_event_game_participants (event_id, team_id, name, email, age, sport, bib_number, nationality, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		eventID, nullableStr(req.TeamID), req.Name, nullableStr(req.Email),
+		nullableInt(req.Age), nullableStr(req.Sport), nullableStr(req.BibNumber), nullableStr(req.Nationality),
+		callerID.(string),
+	).Scan(&id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create participant"})
 		return
 	}
 
+	participant, _ := h.getParticipantByID(id)
 	h.hub.Broadcast(models.WSMessage{Type: "participant_added", EventID: eventID, Data: participant})
 	c.JSON(http.StatusCreated, participant)
 }
 
 func (h *Handler) GetParticipant(c *gin.Context) {
 	id := c.Param("id")
-	result, err := h.collection.Get("participant::"+id, nil)
+	p, err := h.getParticipantByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "participant not found"})
 		return
 	}
-
-	var p models.Participant
-	if err := result.Content(&p); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse participant"})
-		return
-	}
-
 	c.JSON(http.StatusOK, p)
 }
 
@@ -134,15 +163,9 @@ func (h *Handler) UpdateParticipant(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("participant::"+id, nil)
+	p, err := h.getParticipantByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "participant not found"})
-		return
-	}
-
-	var p models.Participant
-	if err := result.Content(&p); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse participant"})
 		return
 	}
 
@@ -158,46 +181,40 @@ func (h *Handler) UpdateParticipant(c *gin.Context) {
 	}
 
 	if req.TeamID != "" && req.TeamID != p.TeamID {
-		if _, err := h.collection.Get("team::"+req.TeamID, nil); err != nil {
+		var exists bool
+		h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_event_teams WHERE id = $1)", req.TeamID).Scan(&exists)
+		if !exists {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "team not found"})
 			return
 		}
 	}
 
-	p.Name = req.Name
-	p.Email = req.Email
-	p.Age = req.Age
-	p.Sport = req.Sport
-	p.TeamID = req.TeamID
-	p.BibNumber = req.BibNumber
-	p.Nationality = req.Nationality
+	h.db.Exec(
+		`UPDATE pt_event_game_participants SET name=$1, email=$2, age=$3, sport=$4, team_id=$5, bib_number=$6, nationality=$7, updated_at=NOW()
+		 WHERE id=$8`,
+		req.Name, nullableStr(req.Email), nullableInt(req.Age), nullableStr(req.Sport),
+		nullableStr(req.TeamID), nullableStr(req.BibNumber), nullableStr(req.Nationality), id,
+	)
 
-	_, err = h.collection.Replace("participant::"+id, p, &gocb.ReplaceOptions{Cas: result.Cas()})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update participant"})
-		return
-	}
-
-	c.JSON(http.StatusOK, p)
+	updated, _ := h.getParticipantByID(id)
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *Handler) DeleteParticipant(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("participant::"+id, nil)
+	p, err := h.getParticipantByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "participant not found"})
 		return
 	}
-	var p models.Participant
-	result.Content(&p)
 
 	if !h.hasEventRole(callerID.(string), p.EventID, models.EventRoleAdmin) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "event admin access required"})
 		return
 	}
 
-	h.collection.Remove("participant::"+id, nil)
+	h.db.Exec("DELETE FROM pt_event_game_participants WHERE id = $1", id)
 	c.JSON(http.StatusOK, gin.H{"message": "participant deleted"})
 }

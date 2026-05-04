@@ -6,13 +6,8 @@ import { useWS } from '../context/WSContext'
 import toast from 'react-hot-toast'
 import CreateEventModal from '../components/modals/CreateEventModal'
 import ConfirmModal from '../components/modals/ConfirmModal'
-
-const eventEmoji = {
-  athletics: '🏃', tournament: '🏆', swimming: '🏊', cycling: '🚴',
-  football: '⚽', basketball: '🏀', tennis: '🎾', volleyball: '🏐',
-  cricket: '🏏', baseball: '⚾', rugby: '🏉', golf: '⛳',
-  boxing: '🥊', wrestling: '🤼', gymnastics: '🤸', 'multi-sport': '🏆', other: '🎯',
-}
+import { SportIcon } from '../utils/sportIcons'
+import { Search, Trash2, Pencil, MapPin, Calendar, Building2, Folder } from 'lucide-react'
 
 const STATUS_FLOW  = { upcoming: 'active', active: 'completed' }
 const STATUS_LABEL = { upcoming: 'Start Event', active: 'Mark Complete' }
@@ -44,11 +39,16 @@ function matchesSearch(ev, q) {
 
 // ── Grid card ─────────────────────────────────────────────────────────────────
 function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChange }) {
+  const [logoError, setLogoError] = useState(false)
+  const logoSrc = ev.logo_base64 || ev.logo_url
   return (
     <div className="card p-5 flex flex-col">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">{eventEmoji[ev.event_type] || '🎯'}</span>
+          {logoSrc && !logoError
+            ? <img src={logoSrc} alt={ev.name} className="w-6 h-6 rounded object-cover shrink-0" onError={() => setLogoError(true)} />
+            : <span className="text-slate-300"><SportIcon sport={ev.event_type} size={24} /></span>
+          }
           {isOwner && (
             <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 leading-none">Mine</span>
           )}
@@ -61,8 +61,8 @@ function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChang
         </h3>
       </Link>
       <p className="text-xs text-slate-400 mt-1 capitalize">{highlight(ev.event_type, query)}</p>
-      {ev.location && <p className="text-xs text-slate-500 mt-1">📍 {highlight(ev.location, query)}</p>}
-      <p className="text-xs text-slate-500 mt-1">📅 {ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</p>
+      {ev.location && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin size={12} className="inline shrink-0" />{highlight(ev.location, query)}</p>}
+      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Calendar size={12} className="inline shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</p>
       {ev.description && <p className="text-xs text-slate-400 mt-2 line-clamp-2">{highlight(ev.description, query)}</p>}
       <div className="mt-auto pt-4 flex gap-2 flex-wrap">
         <Link to={`/events/${ev.id}`} className="btn-secondary btn-sm flex-1 text-center">View</Link>
@@ -73,8 +73,8 @@ function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChang
         )}
         {isAdmin && (
           <>
-            <button className="btn-secondary btn-sm" onClick={() => onEdit(ev)}>✏️</button>
-            <button className="btn-danger btn-sm" onClick={() => onDelete(ev.id)}>🗑️</button>
+            <button className="btn-secondary btn-sm" onClick={() => onEdit(ev)}><Pencil size={14} /></button>
+            <button className="btn-danger btn-sm" onClick={() => onDelete(ev.id)}><Trash2 size={14} /></button>
           </>
         )}
       </div>
@@ -86,7 +86,7 @@ function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChang
 function ListRow({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChange }) {
   return (
     <div className="card px-5 py-4 flex items-center gap-4 hover:border-slate-500 transition-colors">
-      <span className="text-2xl shrink-0">{eventEmoji[ev.event_type] || '🎯'}</span>
+      <span className="text-slate-300 shrink-0"><SportIcon sport={ev.event_type} size={24} /></span>
 
       {/* Main info */}
       <div className="flex-1 min-w-0">
@@ -101,8 +101,8 @@ function ListRow({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChange
         </div>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
           <span className="text-xs text-slate-400 capitalize">{highlight(ev.event_type, query)}</span>
-          {ev.location && <span className="text-xs text-slate-500">📍 {highlight(ev.location, query)}</span>}
-          <span className="text-xs text-slate-500">📅 {ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</span>
+          {ev.location && <span className="text-xs text-slate-500 inline-flex items-center gap-1"><MapPin size={12} className="inline mr-1 shrink-0" />{highlight(ev.location, query)}</span>}
+          <span className="text-xs text-slate-500 inline-flex items-center gap-1"><Calendar size={12} className="inline mr-1 shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</span>
         </div>
         {ev.description && (
           <p className="text-xs text-slate-400 mt-1 line-clamp-1">{highlight(ev.description, query)}</p>
@@ -119,8 +119,8 @@ function ListRow({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChange
         )}
         {isAdmin && (
           <>
-            <button className="btn-secondary btn-sm" onClick={() => onEdit(ev)}>✏️</button>
-            <button className="btn-danger btn-sm" onClick={() => onDelete(ev.id)}>🗑️</button>
+            <button className="btn-secondary btn-sm" onClick={() => onEdit(ev)}><Pencil size={14} /></button>
+            <button className="btn-danger btn-sm" onClick={() => onDelete(ev.id)}><Trash2 size={14} /></button>
           </>
         )}
       </div>
@@ -288,7 +288,7 @@ export default function Events() {
 
       {/* Search bar */}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">🔍</span>
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Search size={14} /></span>
         <input
           className="input pl-9 w-full"
           placeholder="Search by name, type, location, or description…"
@@ -333,14 +333,14 @@ export default function Events() {
       {/* Content */}
       {events.length === 0 ? (
         <div className="text-center py-20">
-          <div className="text-5xl mb-3">🏟️</div>
+          <div className="mb-3 text-slate-400 flex justify-center"><Building2 size={56} /></div>
           <p className="text-white font-semibold text-lg">No events yet</p>
           <p className="text-slate-400 text-sm mt-1 mb-6">Be the first to create one.</p>
           <button className="btn-primary" onClick={() => setShowCreate(true)}>Create Event</button>
         </div>
       ) : noResults ? (
         <div className="text-center py-20">
-          <div className="text-5xl mb-3">🔍</div>
+          <div className="mb-3 text-slate-400 flex justify-center"><Search size={40} /></div>
           <p className="text-white font-semibold">No events found</p>
           <p className="text-slate-400 text-sm mt-1">Try a different search term or clear the search.</p>
           <button className="btn-secondary mt-4" onClick={() => setQuery('')}>Clear Search</button>
@@ -348,7 +348,7 @@ export default function Events() {
       ) : filtered !== null ? (
         filtered.length === 0 ? (
           <div className="text-center py-20">
-            <div className="text-5xl mb-3">🗂️</div>
+            <div className="mb-3 text-slate-400 flex justify-center"><Folder size={40} /></div>
             <p className="text-slate-400">No events match this filter{query ? ' and search' : ''}</p>
           </div>
         ) : (

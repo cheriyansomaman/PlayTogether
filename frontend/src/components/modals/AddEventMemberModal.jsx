@@ -4,15 +4,17 @@ import toast from 'react-hot-toast'
 import Modal from './Modal'
 
 function TeamSelect({ teams, value, onChange }) {
-  const [query, setQuery]     = useState(value || '')
-  const [open, setOpen]       = useState(false)
-  const [focused, setFocused] = useState(false)
+  // value is the team ID; derive display name from it
+  const selectedTeam = teams.find((t) => t.id === value)
+  const [query, setQuery] = useState(selectedTeam?.name || '')
+  const [open, setOpen]   = useState(false)
   const wrapRef = useRef(null)
 
-  // Keep query in sync when form value changes externally
-  useEffect(() => { setQuery(value || '') }, [value])
+  useEffect(() => {
+    const t = teams.find((t) => t.id === value)
+    setQuery(t?.name || '')
+  }, [value, teams])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
@@ -25,13 +27,13 @@ function TeamSelect({ teams, value, onChange }) {
 
   const select = (team) => {
     setQuery(team.name)
-    onChange(team.name)
+    onChange(team.id)   // emit ID
     setOpen(false)
   }
 
   const handleInput = (e) => {
     setQuery(e.target.value)
-    onChange(e.target.value)   // allow free text too
+    if (!e.target.value) onChange('')
     setOpen(true)
   }
 
@@ -41,7 +43,7 @@ function TeamSelect({ teams, value, onChange }) {
   }
 
   if (!teams.length) {
-    return <input className="input" value={query} onChange={handleInput} placeholder="e.g. Eagles FC" />
+    return <input className="input" value={query} onChange={handleInput} placeholder="No teams yet" disabled />
   }
 
   return (
@@ -50,13 +52,11 @@ function TeamSelect({ teams, value, onChange }) {
         className="input pr-8"
         value={query}
         onChange={handleInput}
-        onFocus={() => { setOpen(true); setFocused(true) }}
-        onBlur={() => setFocused(false)}
+        onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        placeholder="Search or type team name…"
+        placeholder="Search team…"
         autoComplete="off"
       />
-      {/* chevron icon */}
       <span
         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none text-xs"
         aria-hidden>▾</span>
@@ -70,7 +70,7 @@ function TeamSelect({ teams, value, onChange }) {
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); select(t) }}
                 className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                  value === t.name
+                  value === t.id
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-200 hover:bg-slate-700'
                 }`}
@@ -85,7 +85,6 @@ function TeamSelect({ teams, value, onChange }) {
               <p className="px-3 py-2.5 text-xs text-slate-500">No teams match "{query}"</p>
             )}
           </div>
-          {/* allow clearing selection */}
           {value && (
             <div className="border-t border-slate-700">
               <button
@@ -152,9 +151,9 @@ export default function AddEventMemberModal({ eventId, member, teams = [], onClo
   const [form, setForm] = useState({
     username:  '',
     user_name:  member?.user_name  || '',
-    role:       member?.role       || 'coordinator',
+    role:       member?.role       || 'viewer',
     age:        member?.age        || '',
-    club:       member?.club       || '',
+    team_id:    member?.team_id    || '',
     address:    member?.address    || '',
     phone:      member?.phone      || '',
     tags:       member?.tags       || '',
@@ -169,13 +168,12 @@ export default function AddEventMemberModal({ eventId, member, teams = [], onClo
     try {
       if (member) {
         const payload = {
-          role:      form.role,
-          user_name: form.user_name,
-          age:       form.age ? parseInt(form.age, 10) : 0,
-          club:      form.club,
-          address:   form.address,
-          phone:     form.phone,
-          tags:      form.tags,
+          role:    form.role,
+          team_id: form.team_id,
+          age:     form.age ? parseInt(form.age, 10) : 0,
+          address: form.address,
+          phone:   form.phone,
+          tags:    form.tags,
         }
         const { data } = await updateEventMember(eventId, member.user_id, payload)
         toast.success('Member updated')
@@ -252,8 +250,8 @@ export default function AddEventMemberModal({ eventId, member, teams = [], onClo
               <label className="label">Team / Club</label>
               <TeamSelect
                 teams={teams}
-                value={form.club}
-                onChange={(v) => setForm((p) => ({ ...p, club: v }))}
+                value={form.team_id}
+                onChange={(v) => setForm((p) => ({ ...p, team_id: v }))}
               />
             </div>
 

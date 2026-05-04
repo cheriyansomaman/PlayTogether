@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { createGame, updateGame } from '../../services/api'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
+import { Search, PersonStanding, Users2 } from 'lucide-react'
 
 const GAME_TYPES = [
   'race', 'match', 'tournament', 'relay', 'heat', 'final', 'semifinal', 'quarterfinal',
@@ -37,7 +38,7 @@ function SelectionList({ items, selectedIds, onToggle, searchPlaceholder, emptyT
 
       {/* Search */}
       <div className="relative mb-2">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none">🔍</span>
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none flex items-center"><Search size={14} /></span>
         <input
           className="input pl-8 text-sm"
           placeholder={searchPlaceholder}
@@ -206,7 +207,7 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
                     : 'text-slate-400 hover:text-white hover:bg-slate-700'
                 } ${mode === 'team' ? 'border-l border-slate-600' : ''}`}
               >
-                {mode === 'individual' ? '🏃 Individual' : '🤝 Team'}
+                {mode === 'individual' ? <><PersonStanding size={14} className="inline mr-1" />Individual</> : <><Users2 size={14} className="inline mr-1" />Team</>}
               </button>
             ))}
           </div>

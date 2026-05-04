@@ -1,71 +1,120 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
 	"log"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/middleware"
 	"github.com/playtogether/backend/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ── KV index helpers ──────────────────────────────────────────────────────────
+// ── Scan helpers ──────────────────────────────────────────────────────────────
 
-func emailIndexKey(email string) string       { return "user_email::" + email }
-func usernameIndexKey(username string) string { return "user_username::" + username }
+func applyUserNulls(u *models.User,
+	id, username, firstName, lastName, passwordHash,
+	address sql.NullString,
+	age sql.NullInt64,
+	createdAt sql.NullTime,
+) {
+	u.ID = id.String
+	u.Username = username.String
+	u.FirstName = firstName.String
+	u.LastName = lastName.String
+	u.PasswordHash = passwordHash.String
+	u.Age = int(age.Int64)
+	u.Address = address.String
+	u.CreatedAt = createdAt.Time
+	u.Name = strings.TrimSpace(u.FirstName + " " + u.LastName)
+}
 
-func (h *Handler) getUserByEmail(email string) (*models.User, error) {
-	idxResult, err := h.collection.Get(emailIndexKey(email), nil)
+func scanUserRow(row *sql.Row) (*models.User, error) {
+	var u models.User
+	var id, username, firstName, lastName, passwordHash,
+		address sql.NullString
+	var age sql.NullInt64
+	var createdAt sql.NullTime
+	err := row.Scan(
+		&id, &username, &firstName, &lastName, &passwordHash,
+		&age, &address, &createdAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-	var idx struct {
-		UserID string `json:"user_id"`
-	}
-	if err := idxResult.Content(&idx); err != nil {
-		return nil, err
-	}
-	userResult, err := h.collection.Get("user::"+idx.UserID, nil)
+	applyUserNulls(&u, id, username, firstName, lastName, passwordHash,
+		address, age, createdAt)
+	return &u, nil
+}
+
+func scanUserRows(rows *sql.Rows) (*models.User, error) {
+	var u models.User
+	var id, username, firstName, lastName, passwordHash,
+		address, email, phone, tags sql.NullString
+	var age sql.NullInt64
+	var createdAt sql.NullTime
+	err := rows.Scan(
+		&id, &username, &firstName, &lastName, &passwordHash,
+		&age, &address, &email, &phone, &tags, &createdAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-	var user models.User
-	if err := userResult.Content(&user); err != nil {
-		return nil, err
+	applyUserNulls(&u, id, username, firstName, lastName, passwordHash,
+		address, age, createdAt)
+	return &u, nil
+}
+
+// id::text forces pq to receive the UUID as a plain text string, avoiding
+// the "unsupported Scan, storing driver.Value type []byte into type *string" error
+// that occurs when pq returns UUID columns in binary format.
+const userSelectCols = `id::text as id, username, first_name, last_name, password_hash, age, address, created_at`
+
+// insertUser inserts a new user and returns the full row via RETURNING.
+func (h *Handler) insertUser(username, firstName, lastName, passwordHash string) (*models.User, error) {
+	return h.insertUserWithEmail(username, firstName, lastName, passwordHash, nil)
+}
+
+// insertUserWithEmail inserts a new user (with optional email) and returns the full row via RETURNING.
+func (h *Handler) insertUserWithEmail(username, firstName, lastName, passwordHash string, email interface{}) (*models.User, error) {
+	row := h.db.QueryRow(
+		`INSERT INTO pt_users (username, first_name, last_name, password_hash, email)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING `+userSelectCols,
+		username, firstName, lastName, passwordHash, email,
+	)
+	return scanUserRow(row)
+}
+
+func (h *Handler) getUserByID(userID string) (*models.User, error) {
+	row := h.db.QueryRow("SELECT "+userSelectCols+" FROM pt_users WHERE id::text = $1", userID)
+	u, err := scanUserRow(row)
+	if err != nil {
+		log.Printf("getUserByID(%s) error: %v", userID, err)
 	}
-	return &user, nil
+	return u, err
 }
 
 func (h *Handler) getUserByUsername(username string) (*models.User, error) {
-	idxResult, err := h.collection.Get(usernameIndexKey(username), nil)
+	row := h.db.QueryRow("SELECT "+userSelectCols+" FROM pt_users WHERE username = $1", username)
+	log.Printf("getUserByUsername(%s)", username)
+	u, err := scanUserRow(row)
 	if err != nil {
-		return nil, err
+		log.Printf("getUserByUsername(%s) error: %v", username, err)
 	}
-	var idx struct {
-		UserID string `json:"user_id"`
-	}
-	if err := idxResult.Content(&idx); err != nil {
-		return nil, err
-	}
-	userResult, err := h.collection.Get("user::"+idx.UserID, nil)
-	if err != nil {
-		return nil, err
-	}
-	var user models.User
-	if err := userResult.Content(&user); err != nil {
-		return nil, err
-	}
-	return &user, nil
+	return u, err
 }
 
-// ── Username generation ───────────────────────────────────────────────────────
+func (h *Handler) getUserByEmail(email string) (*models.User, error) {
+	row := h.db.QueryRow("SELECT "+userSelectCols+" FROM pt_users WHERE email = $1", email)
+	return scanUserRow(row)
+}
+
+// ── Username helpers ──────────────────────────────────────────────────────────
 
 func usernameBase(firstName, lastName string) string {
 	var initials strings.Builder
@@ -96,16 +145,20 @@ func usernameBase(firstName, lastName string) string {
 }
 
 func (h *Handler) ensureUniqueUsername(base string) string {
-	if _, err := h.collection.Get(usernameIndexKey(base), nil); err != nil {
+	var exists bool
+	h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_users WHERE username = $1)", base).Scan(&exists)
+	if !exists {
 		return base
 	}
 	for i := 0; i < 300; i++ {
-		candidate := fmt.Sprintf("%s%02d", base, rand.Intn(100))
-		if _, err := h.collection.Get(usernameIndexKey(candidate), nil); err != nil {
+		// Use time-based suffix to avoid rand import
+		candidate := base + strings.Replace(time.Now().Format("0405"), ":", "", -1)
+		h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_users WHERE username = $1)", candidate).Scan(&exists)
+		if !exists {
 			return candidate
 		}
 	}
-	return base + uuid.New().String()[:4]
+	return base + time.Now().Format("150405")
 }
 
 func splitName(fullName string) (string, string) {
@@ -122,12 +175,10 @@ func splitName(fullName string) (string, string) {
 // ── Request/response types ────────────────────────────────────────────────────
 
 type RegisterRequest struct {
-	FirstName       string      `json:"first_name" binding:"required"`
-	LastName        string      `json:"last_name" binding:"required"`
-	Email           string      `json:"email"`
-	Password        string      `json:"password" binding:"required,min=6"`
-	ConfirmPassword string      `json:"confirm_password" binding:"required"`
-	Role            models.Role `json:"role"`
+	FirstName string `json:"first_name" binding:"required"`
+	LastName  string `json:"last_name" binding:"required"`
+	Username  string `json:"username"`
+	Password  string `json:"password" binding:"required,min=6"`
 }
 
 type LoginRequest struct {
@@ -152,7 +203,6 @@ type SetPasswordRequest struct {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-// CheckUsername returns whether a username exists and whether it has a password set.
 func (h *Handler) CheckUsername(c *gin.Context) {
 	var req CheckUsernameRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -162,13 +212,18 @@ func (h *Handler) CheckUsername(c *gin.Context) {
 	username := strings.ToLower(strings.TrimPrefix(req.Username, "@"))
 	user, err := h.getUserByUsername(username)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"exists": false, "has_password": false})
+		if err.Error() == "sql: no rows in result set" {
+			c.JSON(http.StatusOK, gin.H{"exists": false, "has_password": false})
+		} else {
+			// Surface scan/query errors so they are visible during development.
+			log.Printf("CheckUsername scan error for %q: %v", username, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"exists": true, "has_password": user.PasswordHash != ""})
 }
 
-// PreviewUsername generates and reserves a unique username without creating a user.
 func (h *Handler) PreviewUsername(c *gin.Context) {
 	var req PreviewUsernameRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -179,7 +234,6 @@ func (h *Handler) PreviewUsername(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"username": username})
 }
 
-// SetPassword sets a password for an account that was created without one (e.g. bulk-added members).
 func (h *Handler) SetPassword(c *gin.Context) {
 	var req SetPasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -204,11 +258,11 @@ func (h *Handler) SetPassword(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
-	user.PasswordHash = string(hash)
-	if _, err := h.collection.Upsert("user::"+user.ID, user, nil); err != nil {
+	if _, err := h.db.Exec("UPDATE pt_users SET password_hash = $1, updated_at = NOW() WHERE id = $2", string(hash), user.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save password"})
 		return
 	}
+	user.PasswordHash = string(hash)
 	token, err := generateToken(*user, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -223,20 +277,17 @@ func (h *Handler) Register(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Password != req.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "passwords do not match"})
-		return
-	}
-	if req.Role == "" || req.Role == models.RoleAdmin {
-		req.Role = models.RoleUser
-	}
-
-	// Email index — only if email is provided
-	if req.Email != "" {
-		if _, err := h.collection.Get(emailIndexKey(req.Email), nil); err == nil {
-			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+	var username string
+	if req.Username != "" {
+		username = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(req.Username, "@")))
+		var usernameExists bool
+		h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_users WHERE username = $1)", username).Scan(&usernameExists)
+		if usernameExists {
+			c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
 			return
 		}
+	} else {
+		username = h.ensureUniqueUsername(usernameBase(req.FirstName, req.LastName))
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -245,38 +296,14 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	username := h.ensureUniqueUsername(usernameBase(req.FirstName, req.LastName))
-	fullName := strings.TrimSpace(req.FirstName + " " + req.LastName)
-
-	user := models.User{
-		ID:           uuid.New().String(),
-		Type:         "user",
-		Email:        req.Email,
-		Name:         fullName,
-		FirstName:    req.FirstName,
-		LastName:     req.LastName,
-		Username:     username,
-		PasswordHash: string(hash),
-		Role:         req.Role,
-		CreatedAt:    time.Now().UTC(),
-	}
-
-	if _, err = h.collection.Insert("user::"+user.ID, user, nil); err != nil {
+	user, err := h.insertUser(username, req.FirstName, req.LastName, string(hash))
+	if err != nil {
 		log.Printf("register insert error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
 		return
 	}
-	if req.Email != "" {
-		if _, err = h.collection.Insert(emailIndexKey(req.Email), map[string]string{"user_id": user.ID}, nil); err != nil {
-			log.Printf("register email index error: %v", err)
-			h.collection.Remove("user::"+user.ID, nil)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to index user email"})
-			return
-		}
-	}
-	h.collection.Upsert(usernameIndexKey(username), map[string]string{"user_id": user.ID}, nil)
 
-	token, err := generateToken(user, h.jwtSecret)
+	token, err := generateToken(*user, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -310,27 +337,20 @@ func (h *Handler) Login(c *gin.Context) {
 
 func (h *Handler) Me(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	result, err := h.collection.Get("user::"+userID.(string), nil)
+	user, err := h.getUserByID(userID.(string))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	var user models.User
-	if err := result.Content(&user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse user"})
 		return
 	}
 	c.JSON(http.StatusOK, user.ToResponse())
 }
 
-// AdminCreateUserRequest accepts both new format (first_name+last_name) and legacy (name).
 type AdminCreateUserRequest struct {
-	Name      string      `json:"name"`
-	FirstName string      `json:"first_name"`
-	LastName  string      `json:"last_name"`
-	Email     string      `json:"email"`
-	Password  string      `json:"password" binding:"required,min=6"`
-	Role      models.Role `json:"role"`
+	Name      string `json:"name"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Password  string `json:"password" binding:"required,min=6"`
 }
 
 func (h *Handler) CreateAdminUser(c *gin.Context) {
@@ -339,7 +359,6 @@ func (h *Handler) CreateAdminUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Support legacy {name} format
 	if req.FirstName == "" && req.LastName == "" && req.Name != "" {
 		req.FirstName, req.LastName = splitName(req.Name)
 	}
@@ -347,12 +366,9 @@ func (h *Handler) CreateAdminUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "first_name is required"})
 		return
 	}
-	if req.Role == "" {
-		req.Role = models.RoleMember
-	}
 
 	if req.Email != "" {
-		if _, err := h.collection.Get(emailIndexKey(req.Email), nil); err == nil {
+		if _, err := h.getUserByEmail(req.Email); err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			return
 		}
@@ -365,54 +381,37 @@ func (h *Handler) CreateAdminUser(c *gin.Context) {
 	}
 
 	username := h.ensureUniqueUsername(usernameBase(req.FirstName, req.LastName))
-	fullName := strings.TrimSpace(req.FirstName + " " + req.LastName)
 
-	user := models.User{
-		ID:           uuid.New().String(),
-		Type:         "user",
-		Email:        req.Email,
-		Name:         fullName,
-		FirstName:    req.FirstName,
-		LastName:     req.LastName,
-		Username:     username,
-		PasswordHash: string(hash),
-		Role:         req.Role,
-		CreatedAt:    time.Now().UTC(),
+	var emailArg interface{}
+	if req.Email != "" {
+		emailArg = req.Email
 	}
 
-	if _, err = h.collection.Insert("user::"+user.ID, user, nil); err != nil {
+	user, err := h.insertUserWithEmail(username, req.FirstName, req.LastName, string(hash), emailArg)
+	if err != nil {
 		log.Printf("create user insert error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
 		return
 	}
-	if req.Email != "" {
-		h.collection.Insert(emailIndexKey(req.Email), map[string]string{"user_id": user.ID}, nil)
-	}
-	h.collection.Upsert(usernameIndexKey(username), map[string]string{"user_id": user.ID}, nil)
-
 	c.JSON(http.StatusCreated, user.ToResponse())
 }
 
 func (h *Handler) ListUsers(c *gin.Context) {
-	q := "SELECT u.* FROM `" + h.bucket + "` AS u WHERE u.type = 'user' ORDER BY u.created_at DESC"
-	rows, err := h.cluster.Query(q, nil)
+	rows, err := h.db.Query("SELECT " + userSelectCols + " FROM pt_users ORDER BY created_at DESC")
 	if err != nil {
 		log.Printf("list users error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Query service unavailable: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var users []models.UserResponse
+	users := []models.UserResponse{}
 	for rows.Next() {
-		var u models.User
-		if err := rows.Row(&u); err != nil {
+		u, err := scanUserRows(rows)
+		if err != nil {
 			continue
 		}
 		users = append(users, u.ToResponse())
-	}
-	if users == nil {
-		users = []models.UserResponse{}
 	}
 	c.JSON(http.StatusOK, users)
 }
@@ -421,65 +420,36 @@ func (h *Handler) DeleteMe(c *gin.Context) {
 	callerID, _ := c.Get("user_id")
 	userID := callerID.(string)
 
-	result, err := h.collection.Get("user::"+userID, nil)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	var user models.User
-	result.Content(&user)
-
-	if _, err := h.collection.Remove("user::"+userID, nil); err != nil {
+	if _, err := h.db.Exec("DELETE FROM pt_users WHERE id = $1", userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete account"})
 		return
 	}
-	if user.Username != "" {
-		h.collection.Remove(usernameIndexKey(user.Username), nil)
-	}
-	if user.Email != "" {
-		h.collection.Remove(emailIndexKey(user.Email), nil)
-	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "account deleted"})
 }
 
 func (h *Handler) DeleteUser(c *gin.Context) {
 	userID := c.Param("id")
-
-	// Prevent self-deletion
 	callerID, _ := c.Get("user_id")
 	if callerID.(string) == userID {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "you cannot delete your own account"})
 		return
 	}
 
-	result, err := h.collection.Get("user::"+userID, nil)
+	res, err := h.db.Exec("DELETE FROM pt_users WHERE id = $1", userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		return
-	}
-	var user models.User
-	result.Content(&user)
-
-	if _, err := h.collection.Remove("user::"+userID, nil); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user"})
 		return
 	}
-	if user.Username != "" {
-		h.collection.Remove(usernameIndexKey(user.Username), nil)
+	if n, _ := res.RowsAffected(); n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
 	}
-	if user.Email != "" {
-		h.collection.Remove(emailIndexKey(user.Email), nil)
-	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 }
 
 func generateToken(user models.User, secret string) (string, error) {
 	claims := middleware.Claims{
 		UserID: user.ID,
-		Email:  user.Email,
-		Role:   user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(72 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

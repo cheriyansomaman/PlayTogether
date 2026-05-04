@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { listUsers, createUser, deleteUser } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
@@ -141,7 +142,7 @@ export default function AdminUsers() {
                       onClick={() => setDeleteTarget(u)}
                       title="Delete user"
                     >
-                      🗑️
+                      <Trash2 size={14} />
                     </button>
                   )}
                 </td>

@@ -4,14 +4,21 @@ import { useAuth } from '../context/AuthContext'
 import { login, checkUsername, setPassword } from '../services/api'
 import PasswordInput from '../components/PasswordInput'
 import toast from 'react-hot-toast'
+import { Trophy, Users2, PersonStanding, BarChart2 } from 'lucide-react'
+
+const STATS = [
+  { icon: <PersonStanding size={24} />, label: 'Events', sub: 'Track' },
+  { icon: <Users2 size={24} />, label: 'Teams', sub: 'Manage' },
+  { icon: <BarChart2 size={24} />, label: 'Results', sub: 'Analyse' },
+]
 
 // step: 'username' | 'password' | 'set_password' | 'not_found'
 export default function Login() {
-  const [step, setStep]                   = useState('username')
-  const [username, setUsername]           = useState('')
-  const [password, setPassword_]          = useState('')
-  const [confirmPassword, setConfirm]     = useState('')
-  const [loading, setLoading]             = useState(false)
+  const [step, setStep]               = useState('username')
+  const [username, setUsername]       = useState('')
+  const [password, setPassword_]      = useState('')
+  const [confirmPassword, setConfirm] = useState('')
+  const [loading, setLoading]         = useState(false)
   const { login: authLogin } = useAuth()
   const navigate = useNavigate()
 
@@ -23,13 +30,9 @@ export default function Login() {
     setLoading(true)
     try {
       const { data } = await checkUsername({ username: cleanUsername })
-      if (!data.exists) {
-        setStep('not_found')
-      } else if (data.has_password) {
-        setStep('password')
-      } else {
-        setStep('set_password')
-      }
+      if (!data.exists)       setStep('not_found')
+      else if (data.has_password) setStep('password')
+      else                    setStep('set_password')
     } catch {
       toast.error('Could not check username — try again')
     } finally {
@@ -53,17 +56,10 @@ export default function Login() {
 
   const handleSetPassword = async (e) => {
     e.preventDefault()
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match')
-      return
-    }
+    if (password !== confirmPassword) { toast.error('Passwords do not match'); return }
     setLoading(true)
     try {
-      const { data } = await setPassword({
-        username: cleanUsername,
-        password,
-        confirm_password: confirmPassword,
-      })
+      const { data } = await setPassword({ username: cleanUsername, password, confirm_password: confirmPassword })
       authLogin(data.token, data.user)
       toast.success(`Welcome, @${data.user.username}!`)
       navigate('/')
@@ -74,34 +70,87 @@ export default function Login() {
     }
   }
 
-  const back = () => {
-    setStep('username')
-    setPassword_('')
-    setConfirm('')
-  }
+  const back = () => { setStep('username'); setPassword_(''); setConfirm('') }
 
   return (
-    <div className="flex items-center justify-center min-h-[80vh]">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🏆</div>
-          <h1 className="text-3xl font-bold text-white">PlayTogether</h1>
-          <p className="text-slate-400 mt-1">Sports Event Manager</p>
+    <div className="fixed inset-0 flex overflow-hidden bg-slate-950">
+
+      {/* ── Left panel ── */}
+      <div className="hidden lg:flex lg:w-[55%] relative flex-col justify-between overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #0e7490 0%, #0891b2 40%, #06b6d4 100%)' }}>
+
+        {/* Diagonal cut-off overlay */}
+        <div className="absolute inset-0 pointer-events-none">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute right-0 top-0 h-full w-32 translate-x-1/2">
+            <polygon points="0,0 100,0 100,100 0,100" fill="#0f172a" />
+          </svg>
         </div>
 
-        <div className="card p-8">
+        {/* Decorative circles */}
+        <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full opacity-20" style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }} />
+        <div className="absolute top-1/4 -right-12 w-64 h-64 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }} />
 
-          {/* ── Step 1: username ──────────────────────────────────────── */}
+        {/* Content */}
+        <div className="relative z-10 flex flex-col h-full px-14 py-12 justify-between">
+
+          {/* Brand */}
+          <div className="flex items-center gap-3">
+            <Trophy size={32} className="text-white" />
+            <span className="text-white font-black text-xl tracking-widest uppercase">PlayTogether</span>
+          </div>
+
+          {/* Hero text */}
+          <div>
+            <p className="text-cyan-200 text-sm font-semibold tracking-[0.3em] uppercase mb-4">Sports Event Manager</p>
+            <h1 className="text-white font-black leading-none mb-6" style={{ fontSize: 'clamp(2.8rem, 5vw, 4.5rem)' }}>
+              THE<br />
+              GAME<br />
+              <span className="text-cyan-900/60 [-webkit-text-stroke:2px_rgba(255,255,255,0.5)]">BEGINS</span>
+            </h1>
+            <p className="text-cyan-100/70 text-base max-w-xs leading-relaxed">
+              Organise events, manage teams, track results — all in one place.
+            </p>
+          </div>
+
+          {/* Stats */}
+          <div className="flex gap-10 pb-2">
+            {STATS.map(({ icon, label, sub }) => (
+              <div key={label}>
+                <div className="text-2xl mb-1">{icon}</div>
+                <div className="text-white font-bold text-sm">{label}</div>
+                <div className="text-cyan-200/60 text-xs">{sub}</div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* ── Right panel (form) ── */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12 overflow-y-auto bg-slate-950">
+        <div className="w-full max-w-sm">
+
+          {/* Mobile brand */}
+          <div className="flex lg:hidden items-center justify-center gap-2 mb-8">
+            <Trophy size={32} className="text-white" />
+            <span className="text-white font-black text-xl tracking-widest uppercase">PlayTogether</span>
+          </div>
+
+          {/* ── Step 1: username ── */}
           {(step === 'username' || step === 'not_found') && (
-            <>
-              <h2 className="text-xl font-semibold text-white mb-6">Sign in</h2>
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-black text-white uppercase tracking-wide">Sign In</h2>
+                <p className="text-slate-500 text-sm mt-1">Enter your username to continue</p>
+              </div>
+
               <form onSubmit={handleCheckUsername} className="space-y-4">
                 <div>
-                  <label className="label">Username</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Username</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm select-none">@</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500 font-mono font-bold select-none">@</span>
                     <input
-                      className="input pl-7 font-mono"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-3.5 text-white font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
                       placeholder="yourname"
                       value={username}
                       onChange={(e) => { setUsername(e.target.value); setStep('username') }}
@@ -112,38 +161,45 @@ export default function Login() {
                 </div>
 
                 {step === 'not_found' && (
-                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
+                  <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-sm text-amber-300">
                     <strong>@{cleanUsername}</strong> is not registered.{' '}
-                    <Link to="/register" className="underline hover:text-amber-100">Create an account →</Link>
+                    <Link to="/register" className="underline hover:text-amber-100">Create account →</Link>
                   </div>
                 )}
 
-                <button type="submit" className="btn-primary w-full" disabled={loading || !username.trim()}>
+                <button
+                  type="submit"
+                  disabled={loading || !username.trim()}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-widest transition-all disabled:opacity-40"
+                  style={{ background: loading || !username.trim() ? '' : 'linear-gradient(90deg, #0891b2, #06b6d4)', color: 'white' }}
+                >
                   {loading ? 'Checking…' : 'Continue →'}
                 </button>
               </form>
-              <p className="text-sm text-slate-400 mt-4 text-center">
-                Don't have an account?{' '}
-                <Link to="/register" className="text-blue-400 hover:underline">Register</Link>
+
+              <p className="text-sm text-slate-500 text-center">
+                No account?{' '}
+                <Link to="/register" className="text-cyan-400 hover:text-cyan-300 font-semibold transition-colors">Register</Link>
               </p>
-            </>
+            </div>
           )}
 
-          {/* ── Step 2a: password ─────────────────────────────────────── */}
+          {/* ── Step 2a: password ── */}
           {step === 'password' && (
-            <>
-              <div className="flex items-center gap-3 mb-6">
-                <button type="button" onClick={back} className="text-slate-400 hover:text-white transition-colors text-lg leading-none">←</button>
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Enter password</h2>
-                  <p className="text-slate-400 text-sm font-mono">@{cleanUsername}</p>
-                </div>
+            <div className="space-y-6">
+              <div>
+                <button type="button" onClick={back} className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors text-sm mb-4">
+                  ← Back
+                </button>
+                <h2 className="text-2xl font-black text-white uppercase tracking-wide">Welcome Back</h2>
+                <p className="text-cyan-400 font-mono text-sm mt-1">@{cleanUsername}</p>
               </div>
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="label">Password</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Password</label>
                   <PasswordInput
-                    className="input"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword_(e.target.value)}
@@ -151,46 +207,50 @@ export default function Login() {
                     required
                   />
                 </div>
-                <button type="submit" className="btn-primary w-full" disabled={loading}>
-                  {loading ? 'Signing in…' : 'Sign in'}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-widest text-white transition-all disabled:opacity-40"
+                  style={{ background: 'linear-gradient(90deg, #0891b2, #06b6d4)' }}
+                >
+                  {loading ? 'Signing in…' : 'Sign In'}
                 </button>
               </form>
-            </>
+            </div>
           )}
 
-          {/* ── Step 2b: set password (account has no password yet) ───── */}
+          {/* ── Step 2b: set password ── */}
           {step === 'set_password' && (
-            <>
-              <div className="flex items-center gap-3 mb-2">
-                <button type="button" onClick={back} className="text-slate-400 hover:text-white transition-colors text-lg leading-none">←</button>
-                <h2 className="text-xl font-semibold text-white">Set your password</h2>
+            <div className="space-y-6">
+              <div>
+                <button type="button" onClick={back} className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors text-sm mb-4">
+                  ← Back
+                </button>
+                <h2 className="text-2xl font-black text-white uppercase tracking-wide">Set Password</h2>
+                <div className="mt-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 px-4 py-3 text-sm text-cyan-300">
+                  Welcome, <span className="font-mono font-semibold">@{cleanUsername}</span>! Account created by admin — set a password to activate.
+                </div>
               </div>
-              <div className="mb-5 px-3 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-sm text-blue-300">
-                Welcome, <span className="font-mono font-semibold">@{cleanUsername}</span>! Your account was created by an admin.
-                Set a password to activate it.
-              </div>
+
               <form onSubmit={handleSetPassword} className="space-y-4">
                 <div>
-                  <label className="label">New Password</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">New Password</label>
                   <PasswordInput
-                    className="input"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-all"
                     placeholder="Min. 6 characters"
                     value={password}
                     onChange={(e) => setPassword_(e.target.value)}
-                    autoFocus
-                    required
-                    minLength={6}
+                    autoFocus required minLength={6}
                   />
                 </div>
                 <div>
-                  <label className="label">Confirm Password</label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Confirm Password</label>
                   <PasswordInput
-                    className={`input ${confirmPassword && password !== confirmPassword ? 'border-red-500' : ''}`}
+                    className={`w-full bg-slate-900 border rounded-xl px-4 py-3.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:ring-1 transition-all ${confirmPassword && password !== confirmPassword ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30' : 'border-slate-700 focus:border-cyan-500 focus:ring-cyan-500/30'}`}
                     placeholder="Repeat password"
                     value={confirmPassword}
                     onChange={(e) => setConfirm(e.target.value)}
-                    required
-                    minLength={6}
+                    required minLength={6}
                   />
                   {confirmPassword && password !== confirmPassword && (
                     <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
@@ -198,13 +258,14 @@ export default function Login() {
                 </div>
                 <button
                   type="submit"
-                  className="btn-primary w-full"
                   disabled={loading || !password || password !== confirmPassword}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-widest text-white transition-all disabled:opacity-40"
+                  style={{ background: 'linear-gradient(90deg, #0891b2, #06b6d4)' }}
                 >
-                  {loading ? 'Saving…' : 'Set Password & Sign in'}
+                  {loading ? 'Saving…' : 'Activate Account →'}
                 </button>
               </form>
-            </>
+            </div>
           )}
 
         </div>

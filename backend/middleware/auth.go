@@ -6,13 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/playtogether/backend/models"
 )
 
 type Claims struct {
-	UserID string      `json:"user_id"`
-	Email  string      `json:"email"`
-	Role   models.Role `json:"role"`
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -42,23 +40,6 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
-		c.Set("role", string(claims.Role))
 		c.Next()
-	}
-}
-
-func RequireRole(roles ...models.Role) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		roleStr, _ := c.Get("role")
-		currentRole := models.Role(roleStr.(string))
-
-		for _, r := range roles {
-			if currentRole == r {
-				c.Next()
-				return
-			}
-		}
-
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 	}
 }

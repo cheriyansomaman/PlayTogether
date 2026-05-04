@@ -1,22 +1,15 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
 	"net/http"
 	"sort"
-	"time"
 
-	"github.com/couchbase/gocb/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
 
-// shareIndexKey is the KV key for token → event_id lookup (same pattern as email index).
-func shareIndexKey(token string) string { return "event_share::" + token }
-
 // GenerateShareLink creates (or returns existing) a share token for an event.
-// POST /events/:id/share
 func (h *Handler) GenerateShareLink(c *gin.Context) {
 	eventID := c.Param("id")
 	callerID, _ := c.Get("user_id")
@@ -26,27 +19,35 @@ func (h *Handler) GenerateShareLink(c *gin.Context) {
 		return
 	}
 
-	result, err := h.collection.Get("event::"+eventID, nil)
+	// Check if event exists and has a token already
+	var existingToken sql.NullString
+	err := h.db.QueryRow("SELECT share_token FROM pt_events WHERE id = $1", eventID).Scan(&existingToken)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
 		return
 	}
-	var event models.Event
-	result.Content(&event)
 
-	if event.ShareToken == "" {
-		event.ShareToken = uuid.New().String()
-		event.UpdatedAt = time.Now().UTC()
-		h.collection.Replace("event::"+eventID, event, &gocb.ReplaceOptions{Cas: result.Cas()})
-		// Store reverse-lookup index: token → event_id
-		h.collection.Upsert(shareIndexKey(event.ShareToken), map[string]string{"event_id": eventID}, nil)
+	if existingToken.Valid && existingToken.String != "" {
+		c.JSON(http.StatusOK, gin.H{"token": existingToken.String})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"token": event.ShareToken})
+	// Generate new token
+	var token string
+	err = h.db.QueryRow(
+		`UPDATE pt_events SET share_token = gen_random_uuid()::text, updated_at = NOW()
+		 WHERE id = $1 RETURNING share_token`,
+		eventID,
+	).Scan(&token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate share link"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"token": token})
 }
 
 // RevokeShareLink removes the share token so the old URL stops working.
-// DELETE /events/:id/share
 func (h *Handler) RevokeShareLink(c *gin.Context) {
 	eventID := c.Param("id")
 	callerID, _ := c.Get("user_id")
@@ -56,19 +57,17 @@ func (h *Handler) RevokeShareLink(c *gin.Context) {
 		return
 	}
 
-	result, err := h.collection.Get("event::"+eventID, nil)
+	res, err := h.db.Exec(
+		"UPDATE pt_events SET share_token = NULL, updated_at = NOW() WHERE id = $1",
+		eventID,
+	)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke share link"})
 		return
 	}
-	var event models.Event
-	result.Content(&event)
-
-	if event.ShareToken != "" {
-		h.collection.Remove(shareIndexKey(event.ShareToken), nil)
-		event.ShareToken = ""
-		event.UpdatedAt = time.Now().UTC()
-		h.collection.Replace("event::"+eventID, event, nil)
+	if n, _ := res.RowsAffected(); n == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "share link revoked"})
@@ -83,97 +82,69 @@ type PublicEventData struct {
 }
 
 // GetPublicEvent serves event data to unauthenticated visitors via share token.
-// GET /public/events/:token  (no auth middleware)
 func (h *Handler) GetPublicEvent(c *gin.Context) {
 	token := c.Param("token")
 
-	// KV index lookup: token → event_id (avoids N1QL index requirement)
-	idxResult, err := h.collection.Get(shareIndexKey(token), nil)
+	// Look up event by share token
+	row := h.db.QueryRow("SELECT "+eventSelectCols+" FROM pt_events WHERE share_token = $1", token)
+	event, err := scanEventRow(row)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "invalid or expired share link"})
 		return
 	}
-	var idx struct {
-		EventID string `json:"event_id"`
-	}
-	if idxResult.Content(&idx) != nil || idx.EventID == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "invalid share link"})
-		return
-	}
 
-	// Load the event
-	evResult, err := h.collection.Get("event::"+idx.EventID, nil)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
-		return
-	}
-	var event models.Event
-	evResult.Content(&event)
-
-	eventID := idx.EventID
+	eventID := event.ID
 
 	// Load games
-	gamesQ := fmt.Sprintf(
-		"SELECT g.* FROM `%s` AS g WHERE g.event_id = $event_id AND g.type = 'game' ORDER BY g.scheduled_at ASC",
-		h.bucket,
+	gRows, _ := h.db.Query(
+		"SELECT "+gameSelectCols+" FROM pt_event_games WHERE event_id = $1 ORDER BY scheduled_at ASC NULLS LAST",
+		eventID,
 	)
-	gRows, err := h.cluster.Query(gamesQ, queryOptions(map[string]interface{}{"event_id": eventID}))
-	var games []models.Game
-	if err == nil {
+	games := []models.Game{}
+	if gRows != nil {
 		defer gRows.Close()
 		for gRows.Next() {
-			var g models.Game
-			if gRows.Row(&g) == nil {
-				games = append(games, g)
+			g, err := scanGameRows(gRows)
+			if err == nil {
+				games = append(games, *g)
 			}
 		}
-	}
-	if games == nil {
-		games = []models.Game{}
 	}
 
 	// Load teams
-	teamsQ := fmt.Sprintf(
-		"SELECT t.* FROM `%s` AS t WHERE t.event_id = $event_id AND t.type = 'team' ORDER BY t.name ASC",
-		h.bucket,
+	tRows, _ := h.db.Query(
+		"SELECT id, event_id, name, description, logo_url, logo_base64, color, created_by, created_at FROM pt_event_teams WHERE event_id = $1 ORDER BY name ASC",
+		eventID,
 	)
-	tRows, err := h.cluster.Query(teamsQ, queryOptions(map[string]interface{}{"event_id": eventID}))
-	var teams []models.Team
-	if err == nil {
+	teams := []models.Team{}
+	if tRows != nil {
 		defer tRows.Close()
 		for tRows.Next() {
-			var t models.Team
-			if tRows.Row(&t) == nil {
-				teams = append(teams, t)
+			t, err := scanTeamRows(tRows)
+			if err == nil {
+				teams = append(teams, *t)
 			}
 		}
-	}
-	if teams == nil {
-		teams = []models.Team{}
 	}
 
 	// Load results
-	resQ := fmt.Sprintf(
-		"SELECT r.* FROM `%s` AS r WHERE r.event_id = $event_id AND r.type = 'result' ORDER BY r.updated_at DESC",
-		h.bucket,
+	rRows, _ := h.db.Query(
+		"SELECT "+resultSelectCols+" FROM pt_event_results WHERE event_id = $1 ORDER BY updated_at DESC",
+		eventID,
 	)
-	rRows, err := h.cluster.Query(resQ, queryOptions(map[string]interface{}{"event_id": eventID}))
-	var results []models.Result
-	if err == nil {
+	results := []models.Result{}
+	if rRows != nil {
 		defer rRows.Close()
 		for rRows.Next() {
-			var r models.Result
-			if rRows.Row(&r) == nil {
-				results = append(results, r)
+			r, err := scanResultRows(rRows)
+			if err == nil {
+				results = append(results, *r)
 			}
 		}
 	}
-	if results == nil {
-		results = []models.Result{}
-	}
 
 	c.JSON(http.StatusOK, PublicEventData{
-		Event:   event,
+		Event:   *event,
 		Games:   games,
 		Teams:   teams,
 		Results: results,

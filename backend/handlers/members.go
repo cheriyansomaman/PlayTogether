@@ -1,44 +1,106 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
 
+func computeMemberAliases(m *models.EventMember) {
+	m.UserName = strings.TrimSpace(m.FirstName + " " + m.LastName)
+	m.UserEmail = m.Email
+	m.CreatedAt = m.JoinedAt
+}
+
+// ── Scan helper ───────────────────────────────────────────────────────────────
+
+// memberQuery selects event member columns plus user details via JOIN.
+const memberQuery = `
+SELECT em.id, em.event_id, em.user_id, em.role, em.team_id, em.added_by, em.joined_at,
+       u.first_name, u.last_name, u.username, u.email, u.age, u.address, u.phone, u.tags,
+       t.name AS team_name
+FROM pt_event_members em
+JOIN pt_users u ON em.user_id = u.id
+LEFT JOIN pt_event_teams t ON em.team_id = t.id`
+
+func scanMemberRow(row *sql.Row) (*models.EventMember, error) {
+	var m models.EventMember
+	var teamID, addedBy, email, address, phone, tags, teamName sql.NullString
+	var age sql.NullInt64
+
+	err := row.Scan(
+		&m.ID, &m.EventID, &m.UserID, &m.Role, &teamID, &addedBy, &m.JoinedAt,
+		&m.FirstName, &m.LastName, &m.Username, &email, &age, &address, &phone, &tags,
+		&teamName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	m.TeamID = teamID.String
+	m.TeamName = teamName.String
+	m.AddedBy = addedBy.String
+	m.Email = email.String
+	m.Age = int(age.Int64)
+	m.Address = address.String
+	m.Phone = phone.String
+	m.Tags = tags.String
+	computeMemberAliases(&m)
+	return &m, nil
+}
+
+func scanMemberRows(rows *sql.Rows) (*models.EventMember, error) {
+	var m models.EventMember
+	var teamID, addedBy, email, address, phone, tags, teamName sql.NullString
+	var age sql.NullInt64
+
+	err := rows.Scan(
+		&m.ID, &m.EventID, &m.UserID, &m.Role, &teamID, &addedBy, &m.JoinedAt,
+		&m.FirstName, &m.LastName, &m.Username, &email, &age, &address, &phone, &tags,
+		&teamName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	m.TeamID = teamID.String
+	m.TeamName = teamName.String
+	m.AddedBy = addedBy.String
+	m.Email = email.String
+	m.Age = int(age.Int64)
+	m.Address = address.String
+	m.Phone = phone.String
+	m.Tags = tags.String
+	computeMemberAliases(&m)
+	return &m, nil
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
 func (h *Handler) GetEventMembers(c *gin.Context) {
 	eventID := c.Param("id")
-	q := fmt.Sprintf(
-		"SELECT em.* FROM `%s` AS em WHERE em.event_id = $event_id AND em.type = 'event_member' ORDER BY em.created_at ASC",
-		h.bucket,
-	)
-	rows, err := h.cluster.Query(q, queryOptions(map[string]interface{}{"event_id": eventID}))
+
+	rows, err := h.db.Query(memberQuery+" WHERE em.event_id = $1 ORDER BY em.joined_at ASC", eventID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var members []models.EventMember
+	members := []models.EventMember{}
 	for rows.Next() {
-		var m models.EventMember
-		if rows.Row(&m) == nil {
-			members = append(members, m)
+		m, err := scanMemberRows(rows)
+		if err != nil {
+			continue
 		}
-	}
-	if members == nil {
-		members = []models.EventMember{}
+		members = append(members, *m)
 	}
 	c.JSON(http.StatusOK, members)
 }
 
-// GetMyEventRole returns the calling user's role in the event — used by the frontend
-// to decide which controls to render.
 func (h *Handler) GetMyEventRole(c *gin.Context) {
 	eventID := c.Param("id")
 	userID, _ := c.Get("user_id")
@@ -54,6 +116,7 @@ func (h *Handler) GetMyEventRole(c *gin.Context) {
 type AddMemberRequest struct {
 	Username string           `json:"username" binding:"required"`
 	Role     models.EventRole `json:"role" binding:"required"`
+	TeamID   string           `json:"team_id"`
 }
 
 func (h *Handler) AddEventMember(c *gin.Context) {
@@ -82,37 +145,26 @@ func (h *Handler) AddEventMember(c *gin.Context) {
 		return
 	}
 
-	// Idempotent: update role if already a member
-	existing, _ := h.collection.Get(models.EventMemberKey(eventID, target.ID), nil)
-	if existing != nil {
-		var m models.EventMember
-		existing.Content(&m)
-		m.Role = req.Role
-		h.collection.Upsert(models.EventMemberKey(eventID, target.ID), m, nil)
-		c.JSON(http.StatusOK, m)
-		return
-	}
-
-	member := models.EventMember{
-		ID:        uuid.New().String(),
-		Type:      "event_member",
-		EventID:   eventID,
-		UserID:    target.ID,
-		UserName:  target.Name,
-		UserEmail: target.Email,
-		Username:  target.Username,
-		Role:      req.Role,
-		AddedBy:   callerID.(string),
-		CreatedAt: time.Now().UTC(),
-	}
-
-	if _, err := h.collection.Insert(models.EventMemberKey(eventID, target.ID), member, nil); err != nil {
+	_, err = h.db.Exec(
+		`INSERT INTO pt_event_members (event_id, user_id, role, team_id, added_by)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role, team_id = EXCLUDED.team_id, updated_at = NOW()`,
+		eventID, target.ID, string(req.Role), nullableStr(req.TeamID), callerID.(string),
+	)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
 
-	h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: member})
-	c.JSON(http.StatusCreated, member)
+	row := h.db.QueryRow(memberQuery+" WHERE em.event_id = $1 AND em.user_id = $2", eventID, target.ID)
+	m, err := scanMemberRow(row)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load member"})
+		return
+	}
+
+	h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: m})
+	c.JSON(http.StatusCreated, m)
 }
 
 func (h *Handler) UpdateEventMember(c *gin.Context) {
@@ -126,53 +178,41 @@ func (h *Handler) UpdateEventMember(c *gin.Context) {
 	}
 
 	var req struct {
-		Role     models.EventRole `json:"role" binding:"required"`
-		UserName string           `json:"user_name"`
-		Age      int              `json:"age"`
-		Club     string           `json:"club"`
-		Address  string           `json:"address"`
-		Phone    string           `json:"phone"`
-		Tags     string           `json:"tags"`
+		Role    models.EventRole `json:"role" binding:"required"`
+		TeamID  string           `json:"team_id"`
+		Age     int              `json:"age"`
+		Address string           `json:"address"`
+		Phone   string           `json:"phone"`
+		Tags    string           `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	result, err := h.collection.Get(models.EventMemberKey(eventID, targetUserID), nil)
+	_, err := h.db.Exec(
+		`UPDATE pt_event_members SET role=$1, team_id=$2, updated_at=NOW()
+		 WHERE event_id=$3 AND user_id=$4`,
+		string(req.Role), nullableStr(req.TeamID), eventID, targetUserID,
+	)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "member not found"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update member"})
 		return
 	}
-	var m models.EventMember
-	result.Content(&m)
-	m.Role = req.Role
-	if req.UserName != "" {
-		m.UserName = req.UserName
+
+	// Mirror profile changes to the user record
+	h.db.Exec(
+		`UPDATE pt_users SET age=$1, address=$2, phone=$3, tags=$4, updated_at=NOW() WHERE id=$5`,
+		nullableInt(req.Age), nullableStr(req.Address), nullableStr(req.Phone), nullableStr(req.Tags),
+		targetUserID,
+	)
+
+	row := h.db.QueryRow(memberQuery+" WHERE em.event_id = $1 AND em.user_id = $2", eventID, targetUserID)
+	m, err := scanMemberRow(row)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load member"})
+		return
 	}
-	m.Age = req.Age
-	m.Club = req.Club
-	m.Address = req.Address
-	m.Phone = req.Phone
-	m.Tags = req.Tags
-
-	h.collection.Upsert(models.EventMemberKey(eventID, targetUserID), m, nil)
-
-	// Mirror profile changes back to the user doc
-	if ur, err := h.collection.Get("user::"+targetUserID, nil); err == nil {
-		var u models.User
-		ur.Content(&u)
-		if req.UserName != "" {
-			u.Name = req.UserName
-		}
-		u.Age = req.Age
-		u.Club = req.Club
-		u.Address = req.Address
-		u.Phone = req.Phone
-		u.Tags = req.Tags
-		h.collection.Upsert("user::"+targetUserID, u, nil)
-	}
-
 	c.JSON(http.StatusOK, m)
 }
 
@@ -186,24 +226,23 @@ func (h *Handler) RemoveEventMember(c *gin.Context) {
 		return
 	}
 
-	h.collection.Remove(models.EventMemberKey(eventID, targetUserID), nil)
-	// Also remove their join request so they can re-apply if needed
-	h.collection.Remove(models.JoinRequestKey(eventID, targetUserID), nil)
+	h.db.Exec("DELETE FROM pt_event_members WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
+	h.db.Exec("DELETE FROM pt_event_join_requests WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
 }
 
 // ── Bulk add ──────────────────────────────────────────────────────────────────
 
-// BulkMemberEntry creates a new user account from name fields and adds them to the event.
 type BulkMemberEntry struct {
 	FirstName string           `json:"first_name"`
 	LastName  string           `json:"last_name"`
+	Email     string           `json:"email"`
 	Age       int              `json:"age"`
 	Address   string           `json:"address"`
-	Club      string           `json:"club"`
 	Phone     string           `json:"phone"`
-	Email     string           `json:"email"`
 	Tags      string           `json:"tags"`
+	TeamID    string           `json:"team_id"`
 	Role      models.EventRole `json:"role"`
 }
 
@@ -220,8 +259,6 @@ type BulkMemberResult struct {
 	Member   *models.EventMember `json:"member,omitempty"`
 }
 
-// BulkAddMembers creates user accounts from first/last names and adds them to an event.
-// POST /events/:id/members/bulk
 func (h *Handler) BulkAddMembers(c *gin.Context) {
 	eventID := c.Param("id")
 	callerID, _ := c.Get("user_id")
@@ -252,7 +289,6 @@ func (h *Handler) BulkAddMembers(c *gin.Context) {
 	}
 
 	results := make([]BulkMemberResult, 0, len(req.Members))
-	now := time.Now().UTC()
 
 	for _, entry := range req.Members {
 		fullName := strings.TrimSpace(entry.FirstName + " " + entry.LastName)
@@ -269,68 +305,78 @@ func (h *Handler) BulkAddMembers(c *gin.Context) {
 			role = models.EventRoleMember
 		}
 
-		// Generate a unique username and create the user account (no password — set on first login)
 		username := h.ensureUniqueUsername(usernameBase(entry.FirstName, entry.LastName))
 		res.Username = username
 
-		userID := uuid.New().String()
-		newUser := models.User{
-			ID:        userID,
-			Type:      "user",
-			Name:      fullName,
-			FirstName: entry.FirstName,
-			LastName:  entry.LastName,
-			Username:  username,
-			Email:     entry.Email,
-			Role:      models.RoleUser,
-			Age:       entry.Age,
-			Club:      entry.Club,
-			Address:   entry.Address,
-			Phone:     entry.Phone,
-			Tags:      entry.Tags,
-			CreatedAt: now,
+		var emailArg interface{}
+		if entry.Email != "" {
+			emailArg = entry.Email
 		}
 
-		if _, err := h.collection.Insert("user::"+userID, newUser, nil); err != nil {
+		var userID string
+		err := h.db.QueryRow(
+			`INSERT INTO pt_users (username, first_name, last_name, email, age, address, phone, tags)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+			username, entry.FirstName, entry.LastName, emailArg,
+			nullableInt(entry.Age), nullableStr(entry.Address), nullableStr(entry.Phone), nullableStr(entry.Tags),
+		).Scan(&userID)
+		if err != nil {
 			res.Error = "failed to create user account"
 			results = append(results, res)
 			continue
 		}
-		h.collection.Upsert(usernameIndexKey(username), map[string]string{"user_id": userID}, nil)
 
-		member := models.EventMember{
-			ID:        uuid.New().String(),
-			Type:      "event_member",
-			EventID:   eventID,
-			UserID:    userID,
-			UserName:  fullName,
-			UserEmail: entry.Email,
-			Username:  username,
-			Age:       entry.Age,
-			Club:      entry.Club,
-			Address:   entry.Address,
-			Phone:     entry.Phone,
-			Tags:      entry.Tags,
-			Role:      role,
-			AddedBy:   callerID.(string),
-			CreatedAt: now,
-		}
-
-		if _, err := h.collection.Insert(models.EventMemberKey(eventID, userID), member, nil); err != nil {
-			// Roll back user creation on failure
-			h.collection.Remove("user::"+userID, nil)
-			h.collection.Remove(usernameIndexKey(username), nil)
+		_, err = h.db.Exec(
+			`INSERT INTO pt_event_members (event_id, user_id, role, team_id, added_by)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (event_id, user_id) DO NOTHING`,
+			eventID, userID, string(role), nullableStr(entry.TeamID), callerID.(string),
+		)
+		if err != nil {
+			h.db.Exec("DELETE FROM pt_users WHERE id = $1", userID)
 			res.Error = "failed to add member"
 			results = append(results, res)
 			continue
 		}
 
+		now := time.Now().UTC()
+		var teamName string
+		if entry.TeamID != "" {
+			h.db.QueryRow("SELECT name FROM pt_event_teams WHERE id = $1", entry.TeamID).Scan(&teamName)
+		}
+		member := &models.EventMember{
+			EventID:   eventID,
+			UserID:    userID,
+			TeamID:    entry.TeamID,
+			TeamName:  teamName,
+			Role:      role,
+			AddedBy:   callerID.(string),
+			JoinedAt:  now,
+			FirstName: entry.FirstName,
+			LastName:  entry.LastName,
+			Username:  username,
+			Email:     entry.Email,
+			Age:       entry.Age,
+			Address:   entry.Address,
+			Phone:     entry.Phone,
+			Tags:      entry.Tags,
+		}
+		computeMemberAliases(member)
+
 		h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: member})
 		res.Success = true
 		res.Message = "added"
-		res.Member = &member
+		res.Member = member
 		results = append(results, res)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"results": results})
+}
+
+// nullableInt returns nil if i is zero, otherwise the int.
+func nullableInt(i int) interface{} {
+	if i == 0 {
+		return nil
+	}
+	return i
 }

@@ -3,22 +3,24 @@ package config
 import "os"
 
 type Config struct {
-	CouchbaseURL      string
-	CouchbaseUsername string
-	CouchbasePassword string
-	CouchbaseBucket   string
-	JWTSecret         string
-	Port              string
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
+	JWTSecret        string
+	Port             string
 }
 
 func Load() *Config {
 	return &Config{
-		CouchbaseURL:      getEnv("COUCHBASE_URL", "couchbase://localhost"),
-		CouchbaseUsername: getEnv("COUCHBASE_USERNAME", "Administrator"),
-		CouchbasePassword: getEnv("COUCHBASE_PASSWORD", "password"),
-		CouchbaseBucket:   getEnv("COUCHBASE_BUCKET", "playtogether"),
-		JWTSecret:         getEnv("JWT_SECRET", "playtogether-secret-change-in-production"),
-		Port:              getEnv("PORT", "8080"),
+		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
+		PostgresUser:     getEnv("POSTGRES_USER", "playtogether"),
+		PostgresPassword: getEnv("POSTGRES_PASSWORD", "playtogether"),
+		PostgresDB:       getEnv("POSTGRES_DB", "playtogether"),
+		JWTSecret:        getEnv("JWT_SECRET", "playtogether-secret-change-in-production"),
+		Port:             getEnv("PORT", "8080"),
 	}
 }
 

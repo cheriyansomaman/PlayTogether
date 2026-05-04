@@ -2,20 +2,24 @@ import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   getEvent, listGames, listTeams, listEventResults,
-  deleteGame, updateGameStatus, deleteTeam,
+  deleteGame, updateGameStatus, cancelGame, deleteTeam,
   getEventMembers, getMyEventRole, removeEventMember,
   getMyJoinRequest, getJoinRequests, reviewJoinRequest,
-  updateEventSettings, generateShareLink, revokeShareLink,
+  updateEvent, updateEventSettings, generateShareLink, revokeShareLink,
+  getRoleAccess, updateRoleAccess, resetRoleAccess,
 } from '../services/api'
 import { useWS } from '../context/WSContext'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
+import { SportIcon, PositionBadge } from '../utils/sportIcons'
+import { Trash2, Pencil, MapPin, Calendar, Clock3, Tag, Link2, XCircle } from 'lucide-react'
 import CreateGameModal from '../components/modals/CreateGameModal'
 import CreateTeamModal from '../components/modals/CreateTeamModal'
 import AddEventMemberModal from '../components/modals/AddEventMemberModal'
 import BulkAddMembersModal from '../components/modals/BulkAddMembersModal'
 import JoinRequestModal, { DEFAULT_QUESTIONS } from '../components/modals/JoinRequestModal'
 import ConfirmModal from '../components/modals/ConfirmModal'
+import CreateEventModal from '../components/modals/CreateEventModal'
 
 const QUESTION_TYPES = ['text', 'number', 'textarea', 'tags', 'team-select']
 
@@ -25,9 +29,9 @@ const QUESTION_TYPE_LABELS = {
 }
 
 const DEFAULT_POINT_SYSTEM = [
-  { rank: 1, points: 3 },
-  { rank: 2, points: 2 },
-  { rank: 3, points: 1 },
+  { rank: 1, rank_name: 'Gold',   points: 3 },
+  { rank: 2, rank_name: 'Silver', points: 2 },
+  { rank: 3, rank_name: 'Bronze', points: 1 },
 ]
 
 const DEFAULT_TEMPLATE_FIELDS = [
@@ -44,6 +48,31 @@ const DEFAULT_TEMPLATE_UNIQUE = ['full_name', 'age']
 const randomId = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('')
 
+const ACTION_LABELS = {
+  add_result:                   'Add Results',
+  modify_result:                'Modify Results',
+  add_member:                   'Add Members',
+  remove_member:                'Remove Members',
+  modify_member:                'Modify Members',
+  add_participant:              'Add Participants',
+  remove_participant:           'Remove Participants',
+  modify_participant:           'Modify Participants',
+  add_game:                     'Add Game',
+  modify_game:                  'Modify Game',
+  add_coordinator:              'Add Coordinator',
+  add_admin:                    'Add Admin',
+  change_role:                  'Change Role',
+  add_team:                     'Add Team',
+  modify_team:                  'Modify Team',
+  member_join_request_approval: 'Join Request Approval',
+  settings_visibility:          'Settings Visibility',
+  start_game:                   'Start Game',
+  cancel_game:                  'Cancel Game',
+  duplicate_game:               'Duplicate Game',
+  edit_game:                    'Edit Game',
+  delete_game:                  'Delete Game',
+}
+
 // ── Settings tab ──────────────────────────────────────────────────────────────
 function SettingsTab({ event, onSave }) {
   const [questions, setQuestions] = useState(
@@ -59,6 +88,47 @@ function SettingsTab({ event, onSave }) {
     event.user_template_unique?.length > 0 ? event.user_template_unique : DEFAULT_TEMPLATE_UNIQUE
   )
   const [saving, setSaving] = useState(false)
+
+  // ── Role access state ──
+  const [roleRules, setRoleRules]   = useState([])
+  const [roleLoading, setRoleLoading] = useState(true)
+  const [roleSaving, setRoleSaving] = useState(false)
+
+  useEffect(() => {
+    getRoleAccess(event.id)
+      .then(({ data }) => setRoleRules(data))
+      .catch(() => {})
+      .finally(() => setRoleLoading(false))
+  }, [event.id])
+
+  const toggleRoleRule = (action, role) => {
+    setRoleRules((prev) => prev.map((r) =>
+      r.action === action ? { ...r, [role]: !r[role] } : r
+    ))
+  }
+
+  const handleRoleSave = async () => {
+    setRoleSaving(true)
+    try {
+      await updateRoleAccess(event.id, roleRules)
+      toast.success('Role access saved')
+    } catch {
+      toast.error('Failed to save role access')
+    } finally {
+      setRoleSaving(false)
+    }
+  }
+
+  const handleRoleReset = async () => {
+    try {
+      await resetRoleAccess(event.id)
+      const { data } = await getRoleAccess(event.id)
+      setRoleRules(data)
+      toast.success('Reset to defaults')
+    } catch {
+      toast.error('Failed to reset')
+    }
+  }
 
   const update = (idx, field, val) =>
     setQuestions((p) => p.map((q, i) => i === idx ? { ...q, [field]: val } : q))
@@ -79,8 +149,11 @@ function SettingsTab({ event, onSave }) {
   const updatePoints = (idx, val) =>
     setPointRules((p) => p.map((r, i) => i === idx ? { ...r, points: Math.max(0, Number(val)) } : r))
 
+  const updateRankName = (idx, val) =>
+    setPointRules((p) => p.map((r, i) => i === idx ? { ...r, rank_name: val } : r))
+
   const addRank = () =>
-    setPointRules((p) => [...p, { rank: p.length + 1, points: 0 }])
+    setPointRules((p) => [...p, { rank: p.length + 1, rank_name: `Rank ${p.length + 1}`, points: 0 }])
 
   const removeRank = (idx) =>
     setPointRules((p) => p.filter((_, i) => i !== idx).map((r, i) => ({ ...r, rank: i + 1 })))
@@ -162,23 +235,32 @@ function SettingsTab({ event, onSave }) {
         </div>
 
         <div className="card overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_auto] gap-0 divide-y divide-slate-700">
+          <div className="grid grid-cols-[auto_1fr_1fr_auto] gap-0 divide-y divide-slate-700">
             {/* header */}
             <div className="contents text-xs font-medium text-slate-500 uppercase tracking-wide">
-              <div className="px-4 py-2 bg-slate-800">Rank</div>
-              <div className="px-4 py-2 bg-slate-800">Points awarded</div>
+              <div className="px-4 py-2 bg-slate-800">Pos</div>
+              <div className="px-4 py-2 bg-slate-800">Rank name</div>
+              <div className="px-4 py-2 bg-slate-800">Points</div>
               <div className="px-4 py-2 bg-slate-800" />
             </div>
 
             {pointRules.map((rule, idx) => (
               <div key={idx} className="contents">
-                <div className="px-4 py-3 flex items-center text-sm font-medium text-slate-300">
-                  {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${rule.rank}`}
-                  <span className="ml-2 text-slate-500 text-xs">Rank {rule.rank}</span>
+                <div className="px-4 py-3 flex items-center text-sm font-medium text-slate-500">
+                  #{rule.rank}
                 </div>
                 <div className="px-4 py-2 flex items-center">
                   <input
-                    className="input w-24 text-center"
+                    className="input"
+                    type="text"
+                    value={rule.rank_name || ''}
+                    placeholder={`Rank ${rule.rank}`}
+                    onChange={(e) => updateRankName(idx, e.target.value)}
+                  />
+                </div>
+                <div className="px-4 py-2 flex items-center">
+                  <input
+                    className="input w-20 text-center"
                     type="number"
                     min="0"
                     value={rule.points}
@@ -277,7 +359,7 @@ function SettingsTab({ event, onSave }) {
                   onClick={() => removeQuestion(idx)}
                   className="text-red-400 hover:text-red-300 px-1"
                   title="Remove"
-                >🗑️</button>
+                ><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
@@ -357,7 +439,7 @@ function SettingsTab({ event, onSave }) {
                   onClick={() => removeTemplateField(idx)}
                   className="text-red-400 hover:text-red-300 px-1"
                   title="Remove field"
-                >🗑️</button>
+                ><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
@@ -417,6 +499,83 @@ function SettingsTab({ event, onSave }) {
         )}
       </div>
 
+      {/* ── Role Access ── */}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-white mb-1">Role Access</h2>
+            <p className="text-sm text-slate-400">
+              Control what coordinators and viewers can do in this event. Admin always has full access.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary shrink-0 text-slate-500 hover:text-white text-sm"
+            onClick={handleRoleReset}
+          >
+            Reset to Defaults
+          </button>
+        </div>
+
+        {roleLoading ? (
+          <div className="text-sm text-slate-500 py-4 text-center">Loading…</div>
+        ) : roleRules.length === 0 ? (
+          <div className="text-sm text-slate-500 py-4 text-center">No rules found.</div>
+        ) : (
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">Action</th>
+                  <th className="px-4 py-2.5 text-center w-20">Admin</th>
+                  <th className="px-4 py-2.5 text-center w-24">Coordinator</th>
+                  <th className="px-4 py-2.5 text-center w-20">Viewer</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {roleRules.map((rule) => (
+                  <tr key={rule.action} className="hover:bg-slate-700/30 transition-colors">
+                    <td className="px-4 py-2.5 text-slate-300 text-xs">
+                      {ACTION_LABELS[rule.action] || rule.action}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className="text-emerald-400 text-base" title="Always enabled">✓</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={rule.role_coordinator}
+                        onChange={() => toggleRoleRule(rule.action, 'role_coordinator')}
+                        className="w-4 h-4 accent-blue-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={rule.role_viewer}
+                        onChange={() => toggleRoleRule(rule.action, 'role_viewer')}
+                        className="w-4 h-4 accent-blue-500 cursor-pointer"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleRoleSave}
+            disabled={roleSaving || roleLoading}
+          >
+            {roleSaving ? 'Saving…' : 'Save Role Access'}
+          </button>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving…' : 'Save Settings'}
@@ -447,10 +606,10 @@ function TeamAvatar({ team, size = 'md' }) {
   return (
     <div
       className={`${sz} flex items-center justify-center font-bold text-white shrink-0 overflow-hidden`}
-      style={{ backgroundColor: team.color || '#3b82f6' }}
+      style={{ backgroundColor: team.color || '#3b82f6', outline: `2px solid ${team.color || '#3b82f6'}`, outlineOffset: '2px' }}
     >
-      {team.logo_url && !imgError ? (
-        <img src={team.logo_url} alt={team.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+      {(team.logo_base64 || team.logo_url) && !imgError ? (
+        <img src={team.logo_base64 || team.logo_url} alt={team.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
       ) : (
         <span>{team.name?.charAt(0)?.toUpperCase() || '?'}</span>
       )}
@@ -458,11 +617,19 @@ function TeamAvatar({ team, size = 'md' }) {
   )
 }
 
-const EVENT_EMOJI = {
-  athletics: '🏃', tournament: '🏆', swimming: '🏊', cycling: '🚴',
-  football: '⚽', basketball: '🏀', tennis: '🎾', volleyball: '🏐',
-  cricket: '🏏', baseball: '⚾', rugby: '🏉', golf: '⛳',
-  boxing: '🥊', wrestling: '🤼', gymnastics: '🤸', 'multi-sport': '🏆', other: '🎯',
+function EventLogo({ event, size = 'md' }) {
+  const [imgError, setImgError] = useState(false)
+  const src = event?.logo_base64 || event?.logo_url
+  const sz = size === 'lg' ? 'w-16 h-16 text-2xl rounded-xl' : size === 'sm' ? 'w-8 h-8 text-sm rounded-lg' : 'w-12 h-12 text-xl rounded-xl'
+  if (!src || imgError) return null
+  return (
+    <img
+      src={src}
+      alt={event.name}
+      className={`${sz} object-cover shrink-0 border border-slate-600`}
+      onError={() => setImgError(true)}
+    />
+  )
 }
 
 // ── Public event info shown to anyone ────────────────────────────────────────
@@ -470,7 +637,7 @@ function PublicEventView({ event, myRequest, onRequestJoin }) {
   return (
     <div className="max-w-xl mx-auto space-y-6">
       <div className="card p-8 text-center">
-        <div className="text-6xl mb-4">{EVENT_EMOJI[event.event_type] || '🎯'}</div>
+        <div className="mb-4 text-slate-300"><SportIcon sport={event.event_type} size={56} /></div>
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className={`badge badge-${event.status}`}>{event.status}</span>
         </div>
@@ -478,15 +645,15 @@ function PublicEventView({ event, myRequest, onRequestJoin }) {
 
         <div className="space-y-2 text-sm text-slate-400 mb-6">
           <div className="flex items-center justify-center gap-2">
-            <span>🏷️</span><span className="capitalize">{event.event_type}</span>
+            <Tag size={14} className="shrink-0" /><span className="capitalize">{event.event_type}</span>
           </div>
           <div className="flex items-center justify-center gap-2">
-            <span>📅</span>
+            <Calendar size={14} className="shrink-0" />
             <span>{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</span>
           </div>
           {event.location && (
             <div className="flex items-center justify-center gap-2">
-              <span>📍</span><span>{event.location}</span>
+              <MapPin size={14} className="shrink-0" /><span>{event.location}</span>
             </div>
           )}
         </div>
@@ -515,7 +682,7 @@ function PublicEventView({ event, myRequest, onRequestJoin }) {
 
         {myRequest?.status === 'rejected' && (
           <div className="flex items-center justify-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/30">
-            <span className="text-xl">❌</span>
+            <span className="text-red-400"><XCircle size={20} /></span>
             <div className="text-left">
               <p className="text-red-300 font-medium text-sm">Request declined</p>
               <p className="text-slate-400 text-xs mt-0.5">Contact the event admin if you think this is a mistake.</p>
@@ -708,6 +875,10 @@ export default function EventDetail() {
   const [eventResults, setEventResults] = useState([])
   const [confirmAction, setConfirmAction] = useState(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
+  const [memberSearch, setMemberSearch]       = useState('')
+  const [memberFilterTeam, setMemberFilterTeam] = useState('')
+  const [memberFilterAgeMin, setMemberFilterAgeMin] = useState('')
+  const [memberFilterAgeMax, setMemberFilterAgeMax] = useState('')
 
   const isEventAdmin  = myRole === 'admin'
   const isEventMember = myRole === 'admin' || myRole === 'coordinator'
@@ -765,6 +936,11 @@ export default function EventDetail() {
       subscribe('game_created',        addOnce(setGames)),
       subscribe('game_updated',        (m) => { if (m.event_id === id) setGames((p) => p.map((g) => g.id === m.data.id ? m.data : g)) }),
       subscribe('game_status_changed', (m) => { if (m.event_id === id) setGames((p) => p.map((g) => g.id === m.data.id ? m.data : g)) }),
+      subscribe('game_cancelled',      (m) => {
+        if (m.event_id !== id) return
+        setGames((p) => p.map((g) => g.id === m.data.id ? m.data : g))
+        setEventResults((p) => p.filter((r) => r.game_id !== m.game_id))
+      }),
       subscribe('team_created',        addOnce(setTeams)),
       subscribe('member_added',        addOnceByUserId(setMembers)),
       subscribe('join_request',        addOnceByUserId(setJoinRequests)),
@@ -832,6 +1008,21 @@ export default function EventDetail() {
     })
   }
 
+  const handleCancelGame = (game) => {
+    setConfirmAction({
+      title: 'Cancel Game',
+      message: `Cancel "${game.name}"? All recorded points for this game will be removed from the leaderboard.`,
+      confirmLabel: 'Cancel Game',
+      errorMsg: 'Failed to cancel game',
+      fn: async () => {
+        const { data } = await cancelGame(game.id)
+        setGames((p) => p.map((g) => g.id === data.id ? data : g))
+        setEventResults((p) => p.filter((r) => r.game_id !== game.id))
+        toast.success('Game cancelled and points removed')
+      },
+    })
+  }
+
   const handleDeleteTeam = (teamId) => {
     setConfirmAction({
       title: 'Delete Team',
@@ -888,7 +1079,26 @@ export default function EventDetail() {
 
   const copyShareUrl = () => {
     const url = `${window.location.origin}/share/${event.share_token}`
-    navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
+    const fallback = () => {
+      const el = document.createElement('textarea')
+      el.value = url
+      el.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      try {
+        document.execCommand('copy')
+        toast.success('Link copied!')
+      } catch {
+        toast.error('Copy failed — please copy the link manually')
+      }
+      document.body.removeChild(el)
+    }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => toast.success('Link copied!')).catch(fallback)
+    } else {
+      fallback()
+    }
   }
 
   // ── Games: sort + filter (must be before any early returns — Rules of Hooks) ──
@@ -956,12 +1166,14 @@ export default function EventDetail() {
             team_id: entry.participant_id,
             team_name: team?.name || entry.participant_name,
             team_color: team?.color || '#3b82f6',
-            total_score: 0, wins: 0, game_count: 0,
+            total_score: 0, game_count: 0, rank_counts: {},
           }
         }
         map[key].total_score += entry.score
         map[key].game_count++
-        if (entry.position === 1) map[key].wins++
+        if (entry.position) {
+          map[key].rank_counts[entry.position] = (map[key].rank_counts[entry.position] || 0) + 1
+        }
       }
     }
     return Object.values(map).sort((a, b) => b.total_score - a.total_score)
@@ -970,17 +1182,30 @@ export default function EventDetail() {
   const topPerformers = useMemo(() => {
     const map = {}
     for (const result of eventResults) {
+      const teamByPos = {}
+      for (const entry of result.entries) {
+        if (entry.participant_type === 'team') {
+          const team = teams.find((t) => t.name === entry.participant_name || t.id === entry.participant_id)
+          teamByPos[entry.position] = { name: entry.participant_name, color: team?.color || null, team_name: team?.name || entry.participant_name }
+        }
+      }
       for (const entry of result.entries) {
         if (entry.participant_type === 'team') continue
         const key = entry.participant_name || entry.participant_id
-        if (!map[key]) map[key] = { name: key, total_score: 0, wins: 0, game_count: 0 }
+        if (!map[key]) map[key] = { name: key, team_color: null, team_name: null, total_score: 0, game_count: 0, rank_counts: {} }
         map[key].total_score += entry.score
         map[key].game_count++
-        if (entry.position === 1) map[key].wins++
+        if (entry.position) {
+          map[key].rank_counts[entry.position] = (map[key].rank_counts[entry.position] || 0) + 1
+          if (!map[key].team_color && teamByPos[entry.position]?.color) {
+            map[key].team_color = teamByPos[entry.position].color
+            map[key].team_name = teamByPos[entry.position].team_name
+          }
+        }
       }
     }
     return Object.values(map).sort((a, b) => b.total_score - a.total_score)
-  }, [eventResults])
+  }, [eventResults, teams])
 
   const myGameResults = useMemo(() => {
     if (!user) return []
@@ -1022,7 +1247,32 @@ export default function EventDetail() {
   }
 
   // ── Member / Admin / Viewer: full view ───────────────────────────────────────
+  const filteredMembers = members.filter((m) => {
+    if (memberSearch) {
+      const q = memberSearch.toLowerCase()
+      if (
+        !(m.user_name || '').toLowerCase().includes(q) &&
+        !(m.username  || '').toLowerCase().includes(q) &&
+        !(m.user_email || '').toLowerCase().includes(q)
+      ) return false
+    }
+    if (memberFilterTeam === '__none__' && m.team_id) return false
+    if (memberFilterTeam && memberFilterTeam !== '__none__' && m.team_id !== memberFilterTeam) return false
+    if (memberFilterAgeMin && m.age < parseInt(memberFilterAgeMin)) return false
+    if (memberFilterAgeMax && m.age > parseInt(memberFilterAgeMax)) return false
+    return true
+  })
+
   const tabs = ['games', 'teams', 'members', 'leaderboard', ...(isEventAdmin ? ['requests', 'settings'] : [])]
+
+  const rankColumns = (event?.point_system?.length > 0 && event.point_system.some(r => r.rank_name))
+    ? event.point_system
+    : DEFAULT_POINT_SYSTEM
+
+  const getRankName = (position) => {
+    const rule = rankColumns.find(r => r.rank === position)
+    return rule?.rank_name || `#${position}`
+  }
 
   return (
     <div className="space-y-6">
@@ -1035,11 +1285,16 @@ export default function EventDetail() {
               <span className={`badge badge-${event.status}`}>{event.status}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_BADGE[myRole]}`}>{myRole}</span>
             </div>
-            <h1 className="text-2xl font-bold text-white">{event.name}</h1>
-            <p className="text-slate-400 text-sm mt-1 capitalize">{event.event_type}</p>
-            {event.location && <p className="text-slate-500 text-sm">📍 {event.location}</p>}
+            <div className="flex items-center gap-3 mt-1">
+              <EventLogo event={event} size="lg" />
+              <div>
+                <h1 className="text-2xl font-bold text-white">{event.name}</h1>
+                <p className="text-slate-400 text-sm capitalize">{event.event_type}</p>
+              </div>
+            </div>
+            {event.location && <p className="text-slate-500 text-sm"><MapPin size={12} className="inline mr-1 shrink-0" />{event.location}</p>}
             <p className="text-slate-500 text-sm">
-              📅 {event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}
+              <Calendar size={12} className="inline mr-1 shrink-0" />{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}
             </p>
             {event.description && <p className="text-slate-300 text-sm mt-2">{event.description}</p>}
           </div>
@@ -1056,12 +1311,20 @@ export default function EventDetail() {
               )}
             </div>
             {isEventAdmin && (
-              <button
-                className={`btn-secondary btn-sm flex items-center gap-1.5 ${showShare ? 'text-blue-400' : ''}`}
-                onClick={() => setShowShare((v) => !v)}
-              >
-                🔗 Share
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="btn-secondary btn-sm flex items-center gap-1.5"
+                  onClick={() => setModal('edit-event')}
+                >
+                  <Pencil size={14} className="inline mr-1" />Edit
+                </button>
+                <button
+                  className={`btn-secondary btn-sm flex items-center gap-1.5 ${showShare ? 'text-blue-400' : ''}`}
+                  onClick={() => setShowShare((v) => !v)}
+                >
+                  <><Link2 size={14} className="inline mr-1" />Share</>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1166,9 +1429,12 @@ export default function EventDetail() {
                             {GAME_STATUS_LABEL[game.status]}
                           </button>
                         )}
+                        {game.status !== 'cancelled' && (
+                          <button className="btn-secondary btn-sm text-amber-400 hover:text-amber-300" onClick={() => handleCancelGame(game)} title="Cancel game">⊘</button>
+                        )}
                         <button className="btn-secondary btn-sm" onClick={() => { setDuplicateFrom(game); setEditItem(null); setModal('game') }} title="Duplicate game">⧉</button>
-                        <button className="btn-secondary btn-sm" onClick={() => { setEditItem(game); setDuplicateFrom(null); setModal('game') }}>✏️</button>
-                        <button className="btn-danger btn-sm" onClick={() => handleDeleteGame(game.id)}>🗑️</button>
+                        <button className="btn-secondary btn-sm" onClick={() => { setEditItem(game); setDuplicateFrom(null); setModal('game') }}><Pencil size={14} /></button>
+                        <button className="btn-danger btn-sm" onClick={() => handleDeleteGame(game.id)}><Trash2 size={14} /></button>
                       </div>
                     )}
                   </div>
@@ -1179,8 +1445,8 @@ export default function EventDetail() {
                     )}
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">{game.game_type}</p>
-                  {game.venue && <p className="text-xs text-slate-500">📍 {game.venue}</p>}
-                  {game.scheduled_at && <p className="text-xs text-slate-500">🕐 {game.scheduled_at}</p>}
+                  {game.venue && <p className="text-xs text-slate-500"><MapPin size={12} className="inline mr-1" />{game.venue}</p>}
+                  {game.scheduled_at && <p className="text-xs text-slate-500"><Clock3 size={12} className="inline mr-1" />{game.scheduled_at}</p>}
                   {game.description && <p className="text-xs text-slate-400 mt-2">{game.description}</p>}
                   <div className="mt-3">
                     <Link to={`/games/${game.id}`} className="btn-secondary btn-sm w-full text-center block">View Game</Link>
@@ -1195,11 +1461,15 @@ export default function EventDetail() {
       {/* Teams Tab */}
       {tab === 'teams' && (
         <div className="space-y-4">
-          {isEventAdmin && (
-            <div className="flex justify-end">
-              <button className="btn-primary" onClick={() => { setModal('team'); setEditItem(null) }}>+ Add Team</button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <EventLogo event={event} size="sm" />
+              <span className="text-sm font-medium text-slate-300">{event.name}</span>
             </div>
-          )}
+            {isEventAdmin && (
+              <button className="btn-primary" onClick={() => { setModal('team'); setEditItem(null) }}>+ Add Team</button>
+            )}
+          </div>
           {teams.length === 0 ? (
             <div className="text-center py-16 text-slate-400">No teams yet.</div>
           ) : (
@@ -1209,14 +1479,19 @@ export default function EventDetail() {
                   <div className="flex items-center gap-3 mb-3">
                     <TeamAvatar team={team} />
                     <div>
-                      <h3 className="font-semibold text-white">{team.name}</h3>
+                      <h3 className="font-semibold text-white">
+                        {team.name}
+                        <span className="ml-1.5 text-xs font-normal text-slate-400">
+                          ({members.filter((m) => m.team_id === team.id).length} members)
+                        </span>
+                      </h3>
                     </div>
                   </div>
                   {team.description && <p className="text-xs text-slate-400 mb-3">{team.description}</p>}
                   {isEventAdmin && (
                     <div className="flex gap-2">
-                      <button className="btn-secondary btn-sm" onClick={() => { setEditItem(team); setModal('team') }}>✏️ Edit</button>
-                      <button className="btn-danger btn-sm" onClick={() => handleDeleteTeam(team.id)}>🗑️</button>
+                      <button className="btn-secondary btn-sm" onClick={() => { setEditItem(team); setModal('team') }}><Pencil size={14} className="inline mr-1" />Edit</button>
+                      <button className="btn-danger btn-sm" onClick={() => handleDeleteTeam(team.id)}><Trash2 size={14} /></button>
                     </div>
                   )}
                 </div>
@@ -1229,65 +1504,118 @@ export default function EventDetail() {
       {/* Members Tab */}
       {tab === 'members' && (
         <div className="space-y-4">
-          {isEventAdmin && (
-            <div className="flex justify-end gap-2">
-              <button className="btn-secondary" onClick={() => setModal('bulk-member')}>⬆ Bulk Add</button>
-              <button className="btn-primary" onClick={() => { setModal('member'); setEditItem(null) }}>+ Add Member</button>
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-end gap-2">
+            <input
+              className="input text-sm py-1.5 flex-1 min-w-[160px]"
+              placeholder="Search name, username, email…"
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+            />
+            <select
+              className="input text-sm py-1.5 w-36"
+              value={memberFilterTeam}
+              onChange={(e) => setMemberFilterTeam(e.target.value)}
+            >
+              <option value="">All teams</option>
+              <option value="__none__">No team</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <div className="flex items-center gap-1">
+              <input
+                className="input text-sm py-1.5 w-20"
+                type="number" min={0} placeholder="Age min"
+                value={memberFilterAgeMin}
+                onChange={(e) => setMemberFilterAgeMin(e.target.value)}
+              />
+              <span className="text-slate-500 text-xs">–</span>
+              <input
+                className="input text-sm py-1.5 w-20"
+                type="number" min={0} placeholder="Age max"
+                value={memberFilterAgeMax}
+                onChange={(e) => setMemberFilterAgeMax(e.target.value)}
+              />
             </div>
-          )}
+            {(memberSearch || memberFilterTeam || memberFilterAgeMin || memberFilterAgeMax) && (
+              <button
+                type="button"
+                className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1.5"
+                onClick={() => { setMemberSearch(''); setMemberFilterTeam(''); setMemberFilterAgeMin(''); setMemberFilterAgeMax('') }}
+              >✕ Clear</button>
+            )}
+            {isEventAdmin && (
+              <div className="flex gap-2 ml-auto">
+                <button className="btn-secondary" onClick={() => setModal('bulk-member')}>⬆ Bulk Add</button>
+                <button className="btn-primary" onClick={() => { setModal('member'); setEditItem(null) }}>+ Add Member</button>
+              </div>
+            )}
+          </div>
+
           {members.length === 0 ? (
             <div className="text-center py-16 text-slate-400">No members yet.</div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">No members match filters.</div>
           ) : (
             <div className="card overflow-hidden">
+              <div className="px-4 py-2 border-b border-slate-700 text-xs text-slate-500">
+                {filteredMembers.length} of {members.length} members
+              </div>
               <table className="w-full text-sm">
                 <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
                   <tr>
                     <th className="px-4 py-3 text-left">User</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell">Details</th>
+                    <th className="px-4 py-3 text-left">Team</th>
                     <th className="px-4 py-3 text-left">Role</th>
                     <th className="px-4 py-3 text-left hidden sm:table-cell">Added</th>
                     {isEventAdmin && <th className="px-4 py-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-600">
-                  {members.map((m) => (
-                    <tr key={m.user_id} className="hover:bg-slate-600/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-white">{m.user_name}</div>
-                        <div className="text-xs text-slate-500 font-mono">
-                          {m.username ? `@${m.username}` : m.user_email}
-                        </div>
-                        {m.tags && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {m.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
-                              <span key={t} className="text-xs text-blue-400">#{t}</span>
-                            ))}
+                  {filteredMembers.map((m) => {
+                    const teamName = m.team_name || teams.find((t) => t.id === m.team_id)?.name || ''
+                    return (
+                      <tr key={m.user_id} className="hover:bg-slate-600/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-white">{m.user_name}</div>
+                          <div className="text-xs text-slate-500 font-mono">
+                            {m.username ? `@${m.username}` : m.user_email}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell text-xs text-slate-400 space-y-0.5">
-                        {m.age > 0 && <div>Age: {m.age}</div>}
-                        {m.club && <div>Club: {m.club}</div>}
-                        {m.phone && <div>{m.phone}</div>}
-                        {m.address && <div className="truncate max-w-32">{m.address}</div>}
-                        {!m.age && !m.club && !m.phone && !m.address && <span className="text-slate-500">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_BADGE[m.role]}`}>{m.role}</span>
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell text-slate-400 text-xs">
-                        {new Date(m.created_at).toLocaleDateString()}
-                      </td>
-                      {isEventAdmin && (
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex gap-1 justify-end">
-                            <button className="btn-secondary btn-sm" onClick={() => { setEditItem(m); setModal('member') }}>✏️</button>
-                            <button className="btn-danger btn-sm" onClick={() => handleRemoveMember(m)}>🗑️</button>
-                          </div>
+                          {m.tags && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {m.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
+                                <span key={t} className="text-xs text-blue-400">#{t}</span>
+                              ))}
+                            </div>
+                          )}
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        <td className="px-4 py-3 hidden md:table-cell text-xs text-slate-400 space-y-0.5">
+                          {m.age > 0 && <div>Age: {m.age}</div>}
+                          {m.club && <div>Club: {m.club}</div>}
+                          {m.phone && <div>{m.phone}</div>}
+                          {m.address && <div className="truncate max-w-32">{m.address}</div>}
+                          {!m.age && !m.club && !m.phone && !m.address && <span className="text-slate-500">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-300">
+                          {teamName || <span className="text-slate-600">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${ROLE_BADGE[m.role]}`}>{m.role}</span>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell text-slate-400 text-xs">
+                          {new Date(m.created_at).toLocaleDateString()}
+                        </td>
+                        {isEventAdmin && (
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex gap-1 justify-end">
+                              <button className="btn-secondary btn-sm" onClick={() => { setEditItem(m); setModal('member') }}><Pencil size={14} /></button>
+                              <button className="btn-danger btn-sm" onClick={() => handleRemoveMember(m)}><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1366,6 +1694,15 @@ export default function EventDetail() {
       {tab === 'leaderboard' && (
         <div className="space-y-8">
 
+          {/* Leaderboard header with event logo */}
+          <div className="flex items-center gap-3">
+            <EventLogo event={event} size="md" />
+            <div>
+              <h2 className="text-lg font-bold text-white">{event.name}</h2>
+              <p className="text-xs text-slate-400 capitalize">{event.event_type} · Leaderboard</p>
+            </div>
+          </div>
+
           {/* My Game Results */}
           <section>
             <h2 className="text-lg font-semibold text-white mb-4">My Game Results</h2>
@@ -1395,8 +1732,10 @@ export default function EventDetail() {
                           </Link>
                           <div className="text-xs text-slate-500 capitalize">{e.game.game_type}</div>
                         </td>
-                        <td className="px-4 py-3 text-center text-lg">
-                          {e.position === 1 ? '🥇' : e.position === 2 ? '🥈' : e.position === 3 ? '🥉' : e.position ? `#${e.position}` : <span className="text-slate-500 text-sm">—</span>}
+                        <td className="px-4 py-3 text-center">
+                          {e.position
+                            ? <span className={`text-xs font-bold ${e.position === 1 ? 'text-yellow-400' : e.position === 2 ? 'text-slate-300' : e.position === 3 ? 'text-orange-400' : 'text-slate-400'}`}>{getRankName(e.position)}</span>
+                            : <span className="text-slate-500 text-sm">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-white">
                           {e.score > 0 ? e.score : <span className="text-slate-500">—</span>}
@@ -1417,14 +1756,18 @@ export default function EventDetail() {
               {teamLeaderboard.length === 0 ? (
                 <div className="card p-6 text-center text-slate-500 text-sm">No team results yet.</div>
               ) : (
-                <div className="card overflow-hidden">
+                <div className="card overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
                       <tr>
                         <th className="px-4 py-3 text-left">Team</th>
-                        <th className="px-4 py-3 text-center">Wins</th>
+                        {rankColumns.map((r) => (
+                          <th key={r.rank} className={`px-3 py-3 text-center ${r.rank === 1 ? 'text-yellow-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-400' : 'text-slate-400'}`}>
+                            {r.rank_name}
+                          </th>
+                        ))}
                         <th className="px-4 py-3 text-center hidden sm:table-cell">Games</th>
-                        <th className="px-4 py-3 text-right">Points</th>
+                        <th className="px-4 py-3 text-right">Pts</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-600">
@@ -1432,12 +1775,16 @@ export default function EventDetail() {
                         <tr key={t.team_id || i} className={`hover:bg-slate-600/30 transition-colors ${i === 0 ? 'bg-amber-500/5' : ''}`}>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-base">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                              <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
                               <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.team_color }} />
                               <span className="font-medium text-white truncate">{t.team_name}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-center text-emerald-400 font-semibold">{t.wins}</td>
+                          {rankColumns.map((r) => (
+                            <td key={r.rank} className={`px-3 py-3 text-center font-semibold ${r.rank === 1 ? 'text-yellow-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-400' : 'text-slate-400'}`}>
+                              {t.rank_counts[r.rank] || 0}
+                            </td>
+                          ))}
                           <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{t.game_count}</td>
                           <td className="px-4 py-3 text-right font-bold text-white">{t.total_score}</td>
                         </tr>
@@ -1454,24 +1801,41 @@ export default function EventDetail() {
               {topPerformers.length === 0 ? (
                 <div className="card p-6 text-center text-slate-500 text-sm">No individual results yet.</div>
               ) : (
-                <div className="card divide-y divide-slate-600">
-                  {topPerformers.slice(0, 10).map((ind, i) => (
-                    <div key={ind.name} className={`flex items-center gap-4 px-5 py-4 ${i === 0 ? 'bg-amber-500/5' : ''}`}>
-                      <div className="text-2xl w-10 text-center shrink-0">
-                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-white truncate">{ind.name}</div>
-                        <div className="text-xs text-slate-500">
-                          {ind.wins} win{ind.wins !== 1 ? 's' : ''} · {ind.game_count} game{ind.game_count !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xl font-bold text-white">{ind.total_score}</div>
-                        <div className="text-xs text-slate-500">pts</div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="card overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Performer</th>
+                        {rankColumns.map((r) => (
+                          <th key={r.rank} className={`px-3 py-3 text-center ${r.rank === 1 ? 'text-yellow-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-400' : 'text-slate-400'}`}>
+                            {r.rank_name}
+                          </th>
+                        ))}
+                        <th className="px-4 py-3 text-center hidden sm:table-cell">Games</th>
+                        <th className="px-4 py-3 text-right">Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-600">
+                      {topPerformers.map((ind, i) => (
+                        <tr key={ind.name} className={`hover:bg-slate-600/30 transition-colors ${i === 0 ? 'bg-amber-500/5' : ''}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                              {ind.team_color && <span className="w-2.5 h-2.5 rounded-full shrink-0 cursor-default" title={ind.team_name || ''} style={{ backgroundColor: ind.team_color }} />}
+                              <span className="font-medium text-white truncate">{ind.name}</span>
+                            </div>
+                          </td>
+                          {rankColumns.map((r) => (
+                            <td key={r.rank} className={`px-3 py-3 text-center font-semibold ${r.rank === 1 ? 'text-yellow-400' : r.rank === 2 ? 'text-slate-300' : r.rank === 3 ? 'text-orange-400' : 'text-slate-400'}`}>
+                              {ind.rank_counts[r.rank] || 0}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{ind.game_count}</td>
+                          <td className="px-4 py-3 text-right font-bold text-white">{ind.total_score}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
@@ -1509,6 +1873,12 @@ export default function EventDetail() {
             else setMembers((p) => p.some((x) => x.user_id === m.user_id) ? p : [...p, m])
             setModal(null); setEditItem(null)
           }}
+        />
+      )}
+      {modal === 'edit-event' && (
+        <CreateEventModal event={event}
+          onClose={() => setModal(null)}
+          onSave={(updated) => { setEvent(updated); setModal(null) }}
         />
       )}
       {modal === 'bulk-member' && (

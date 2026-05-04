@@ -11,13 +11,8 @@ import toast from 'react-hot-toast'
 import RecordResultModal from '../components/modals/RecordResultModal'
 import AddParticipantModal from '../components/modals/AddParticipantModal'
 import ConfirmModal from '../components/modals/ConfirmModal'
-
-const positionBadge = (pos) => {
-  if (pos === 1) return '🥇'
-  if (pos === 2) return '🥈'
-  if (pos === 3) return '🥉'
-  return `#${pos}`
-}
+import { SportIcon, PositionBadge } from '../utils/sportIcons'
+import { Users2, PersonStanding, MapPin, Clock3, Trash2, Pencil, BarChart2 } from 'lucide-react'
 
 function TeamAvatar({ team }) {
   const [imgError, setImgError] = useState(false)
@@ -26,8 +21,8 @@ function TeamAvatar({ team }) {
       className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white text-sm shrink-0 overflow-hidden"
       style={{ backgroundColor: team.color || '#3b82f6' }}
     >
-      {team.logo_url && !imgError ? (
-        <img src={team.logo_url} alt={team.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
+      {(team.logo_base64 || team.logo_url) && !imgError ? (
+        <img src={team.logo_base64 || team.logo_url} alt={team.name} className="w-full h-full object-cover" onError={() => setImgError(true)} />
       ) : (
         <span>{team.name?.charAt(0)?.toUpperCase()}</span>
       )}
@@ -46,10 +41,11 @@ export default function GameDetail() {
   const [participants, setParticipants] = useState([])
   const [teams, setTeams]             = useState([])
   const [members, setMembers]         = useState([])
-  const [tab, setTab]                 = useState('participants')
+  const [tab, setTab]                 = useState(null)
   const [loading, setLoading]         = useState(true)
   const [showRecord, setShowRecord]   = useState(false)
   const [showAddParticipant, setShowAddParticipant] = useState(false)
+  const [addForTeamId, setAddForTeamId] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
   const [confirmLoading, setConfirmLoading] = useState(false)
 
@@ -58,6 +54,7 @@ export default function GameDetail() {
       const gameData = await getGame(id)
       const g = gameData.data
       setGame(g)
+      setTab(g.game_mode === 'team' ? 'teams' : 'participants')
       const [res, parts, tms, mem, ev] = await Promise.all([
         getGameResult(id).catch(() => ({ data: null })),
         listGameParticipants(id),
@@ -86,7 +83,7 @@ export default function GameDetail() {
         setParticipants((p) => p.some((x) => x.id === m.data.id) ? p : [...p, m.data])
       }),
       subscribe('result_update', (m) => {
-        if (m.game_id === id) { setResult(m.data); toast.success('Results updated!', { icon: '📊' }) }
+        if (m.game_id === id) { setResult(m.data); toast.success('Results updated!') }
       }),
       subscribe('game_updated', (m) => {
         if (m.game_id === id) setGame(m.data)
@@ -144,6 +141,8 @@ export default function GameDetail() {
     : []
 
   const isTeamGame = game?.game_mode === 'team'
+  const myMember = members.find((m) => m.user_id === user?.id)
+  const canEdit  = myMember?.role === 'admin' || myMember?.role === 'coordinator'
 
   if (loading) return (
     <div className="flex justify-center py-24">
@@ -167,11 +166,11 @@ export default function GameDetail() {
               ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
               : 'bg-blue-500/20 text-blue-300 border-blue-500/30'
           }`}>
-            {isTeamGame ? '🤝 Team' : '🏃 Individual'}
+            {isTeamGame ? <><Users2 size={14} className="inline mr-1" />Team</> : <><PersonStanding size={14} className="inline mr-1" />Individual</>}
           </span>
           {result && (
             <span className={`badge ${result.status === 'final' ? 'badge-completed' : 'badge-active'}`}>
-              {result.status === 'final' ? '✓ Final' : '⏳ Partial'}
+              {result.status === 'final' ? '✓ Final' : 'Partial'}
             </span>
           )}
         </div>
@@ -182,8 +181,8 @@ export default function GameDetail() {
           )}
         </h1>
         <p className="text-slate-400 text-sm mt-1 capitalize">{game.game_type}</p>
-        {game.venue && <p className="text-slate-500 text-sm">📍 {game.venue}</p>}
-        {game.scheduled_at && <p className="text-slate-500 text-sm">🕐 {new Date(game.scheduled_at).toLocaleString()}</p>}
+        {game.venue && <p className="text-slate-500 text-sm"><MapPin size={12} className="inline mr-1 shrink-0" />{game.venue}</p>}
+        {game.scheduled_at && <p className="text-slate-500 text-sm"><Clock3 size={12} className="inline mr-1 shrink-0" />{new Date(game.scheduled_at).toLocaleString()}</p>}
         {game.description && <p className="text-slate-300 text-sm mt-2">{game.description}</p>}
 
         {/* Stats */}
@@ -219,14 +218,14 @@ export default function GameDetail() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-slate-400">{participants.length} participant{participants.length !== 1 ? 's' : ''}</p>
-            <button className="btn-primary" onClick={() => setShowAddParticipant(true)}>+ Add Participant</button>
+            {canEdit && <button className="btn-primary" onClick={() => setShowAddParticipant(true)}>+ Add Participant</button>}
           </div>
 
           {participants.length === 0 ? (
             <div className="text-center py-16">
-              <div className="text-4xl mb-3">🏃</div>
+              <div className="mb-3 text-slate-400"><PersonStanding size={40} /></div>
               <p className="text-slate-400">No participants added yet.</p>
-              <button className="btn-primary mt-4" onClick={() => setShowAddParticipant(true)}>Add First Participant</button>
+              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowAddParticipant(true)}>Add First Participant</button>}
             </div>
           ) : (
             <div className="card overflow-hidden">
@@ -238,7 +237,7 @@ export default function GameDetail() {
                     <th className="px-4 py-3 text-left hidden md:table-cell">Sport</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell">Bib #</th>
                     <th className="px-4 py-3 text-left hidden lg:table-cell">Age</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    {canEdit && <th className="px-4 py-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-600">
@@ -261,9 +260,11 @@ export default function GameDetail() {
                         <td className="px-4 py-3 hidden md:table-cell text-slate-400">{p.sport || '—'}</td>
                         <td className="px-4 py-3 hidden md:table-cell text-slate-400">{p.bib_number || '—'}</td>
                         <td className="px-4 py-3 hidden lg:table-cell text-slate-400">{p.age || '—'}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)}>🗑️</button>
-                        </td>
+                        {canEdit && (
+                          <td className="px-4 py-3 text-right">
+                            <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)}><Trash2 size={14} /></button>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -280,23 +281,68 @@ export default function GameDetail() {
           <p className="text-sm text-slate-400">{assignedTeams.length} team{assignedTeams.length !== 1 ? 's' : ''} assigned to this game</p>
           {assignedTeams.length === 0 ? (
             <div className="text-center py-16">
-              <div className="text-4xl mb-3">🤝</div>
+              <div className="mb-3 text-slate-400"><Users2 size={40} /></div>
               <p className="text-slate-400">No teams assigned.</p>
               <Link to={`/events/${game.event_id}`} className="btn-secondary mt-4 inline-block">
                 Edit Game in Event
               </Link>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="space-y-4">
               {assignedTeams.map((team) => {
-                const count = participants.filter((p) => p.team_id === team.id).length
+                const teamParticipants = participants.filter((p) => p.team_id === team.id)
                 return (
-                  <div key={team.id} className="card p-5 flex items-center gap-3">
-                    <TeamAvatar team={team} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-white truncate">{team.name}</div>
-                      {team.description && <div className="text-xs text-slate-400 truncate">{team.description}</div>}
+                  <div key={team.id} className="card overflow-hidden">
+                    {/* Team header */}
+                    <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-700">
+                      <TeamAvatar team={team} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-white">{team.name}</div>
+                        {team.description && <div className="text-xs text-slate-400">{team.description}</div>}
+                      </div>
+                      <span className="text-xs text-slate-400 shrink-0">{teamParticipants.length} participant{teamParticipants.length !== 1 ? 's' : ''}</span>
+                      {canEdit && (
+                        <button
+                          className="btn-secondary btn-sm shrink-0"
+                          onClick={() => { setAddForTeamId(team.id); setShowAddParticipant(true) }}
+                        >+ Add</button>
+                      )}
                     </div>
+
+                    {/* Participants list */}
+                    {teamParticipants.length === 0 ? (
+                      <div className="px-5 py-6 text-center text-sm text-slate-500">No participants yet.</div>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-800/60 text-slate-400 text-xs uppercase tracking-wide">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Name</th>
+                            <th className="px-4 py-2 text-left hidden sm:table-cell">Bib #</th>
+                            <th className="px-4 py-2 text-left hidden md:table-cell">Sport</th>
+                            <th className="px-4 py-2 text-left hidden md:table-cell">Age</th>
+                            {canEdit && <th className="px-4 py-2 text-right">Actions</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700">
+                          {teamParticipants.map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-600/20 transition-colors">
+                              <td className="px-4 py-2.5">
+                                <div className="font-medium text-white">{p.name}</div>
+                                {p.email && <div className="text-xs text-slate-500">{p.email}</div>}
+                              </td>
+                              <td className="px-4 py-2.5 hidden sm:table-cell text-slate-400">{p.bib_number || '—'}</td>
+                              <td className="px-4 py-2.5 hidden md:table-cell text-slate-400">{p.sport || '—'}</td>
+                              <td className="px-4 py-2.5 hidden md:table-cell text-slate-400">{p.age || '—'}</td>
+                              {canEdit && (
+                                <td className="px-4 py-2.5 text-right">
+                                  <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)}><Trash2 size={14} /></button>
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 )
               })}
@@ -317,16 +363,18 @@ export default function GameDetail() {
                 </span>
               )}
             </div>
-            <button className="btn-primary" onClick={() => setShowRecord(true)}>
-              {result ? '✏️ Update Results' : '📊 Record Results'}
-            </button>
+            {canEdit && (
+              <button className="btn-primary" onClick={() => setShowRecord(true)}>
+                {result ? <><Pencil size={14} className="inline mr-1" />Update Results</> : <><BarChart2 size={14} className="inline mr-1" />Record Results</>}
+              </button>
+            )}
           </div>
 
           {!result || sortedEntries.length === 0 ? (
             <div className="text-center py-16">
-              <div className="text-5xl mb-3">📊</div>
+              <div className="mb-3 text-slate-400"><BarChart2 size={48} /></div>
               <p className="text-slate-400">No results recorded yet.</p>
-              <button className="btn-primary mt-4" onClick={() => setShowRecord(true)}>Record Results</button>
+              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowRecord(true)}>Record Results</button>}
             </div>
           ) : (
             <div className="space-y-6">
@@ -342,7 +390,7 @@ export default function GameDetail() {
                       : 'bg-slate-700 border-slate-600'
                     }`}
                   >
-                    <div className="text-2xl w-10 text-center shrink-0">{positionBadge(entry.position)}</div>
+                    <div className="text-2xl w-10 text-center shrink-0"><PositionBadge position={entry.position} /></div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-white truncate">{getName(entry)}</div>
                       {entry.notes && <div className="text-xs text-slate-500 truncate">{entry.notes}</div>}
@@ -370,7 +418,7 @@ export default function GameDetail() {
                           : 'bg-slate-700 border-slate-600'
                         }`}
                       >
-                        <div className="text-xl w-8 text-center shrink-0">{positionBadge(entry.position)}</div>
+                        <div className="text-xl w-8 text-center shrink-0"><PositionBadge position={entry.position} /></div>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-white truncate">{entry.participant_name}</div>
                           <div className="text-xs text-slate-500">Combined score</div>
@@ -400,10 +448,12 @@ export default function GameDetail() {
           teams={teams}
           members={members}
           participants={participants}
-          onClose={() => setShowAddParticipant(false)}
+          defaultTeamId={addForTeamId}
+          onClose={() => { setShowAddParticipant(false); setAddForTeamId(null) }}
           onSave={(p) => {
             setParticipants((prev) => prev.some((x) => x.id === p.id) ? prev : [...prev, p])
             setShowAddParticipant(false)
+            setAddForTeamId(null)
           }}
         />
       )}

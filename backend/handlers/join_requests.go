@@ -1,93 +1,169 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
+
+// ── Scan helper ───────────────────────────────────────────────────────────────
+
+// joinRequestQuery selects join request columns plus user details via JOIN.
+const joinRequestQuery = `
+SELECT jr.id, jr.event_id, jr.user_id, jr.status, jr.questions, jr.answers,
+       jr.reviewed_by, jr.reviewed_at, jr.created_at,
+       u.first_name, u.last_name, u.username, u.email
+FROM pt_event_join_requests jr
+JOIN pt_users u ON jr.user_id = u.id`
+
+func scanJoinRequestRow(row *sql.Row) (*models.JoinRequest, error) {
+	var jr models.JoinRequest
+	var reviewedBy, email sql.NullString
+	var reviewedAt sql.NullTime
+	var questionsJSON, answersJSON []byte
+
+	err := row.Scan(
+		&jr.ID, &jr.EventID, &jr.UserID, &jr.Status,
+		&questionsJSON, &answersJSON,
+		&reviewedBy, &reviewedAt, &jr.CreatedAt,
+		&jr.FirstName, &jr.LastName, &jr.Username, &email,
+	)
+	if err != nil {
+		return nil, err
+	}
+	jr.ReviewedBy = reviewedBy.String
+	jr.Email = email.String
+	if reviewedAt.Valid {
+		t := reviewedAt.Time
+		jr.ReviewedAt = &t
+	}
+	jsonUnmarshal(questionsJSON, &jr.Questions)
+	jsonUnmarshal(answersJSON, &jr.Answers)
+	return &jr, nil
+}
+
+func scanJoinRequestRows(rows *sql.Rows) (*models.JoinRequest, error) {
+	var jr models.JoinRequest
+	var reviewedBy, email sql.NullString
+	var reviewedAt sql.NullTime
+	var questionsJSON, answersJSON []byte
+
+	err := rows.Scan(
+		&jr.ID, &jr.EventID, &jr.UserID, &jr.Status,
+		&questionsJSON, &answersJSON,
+		&reviewedBy, &reviewedAt, &jr.CreatedAt,
+		&jr.FirstName, &jr.LastName, &jr.Username, &email,
+	)
+	if err != nil {
+		return nil, err
+	}
+	jr.ReviewedBy = reviewedBy.String
+	jr.Email = email.String
+	if reviewedAt.Valid {
+		t := reviewedAt.Time
+		jr.ReviewedAt = &t
+	}
+	jsonUnmarshal(questionsJSON, &jr.Questions)
+	jsonUnmarshal(answersJSON, &jr.Answers)
+	return &jr, nil
+}
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) RequestToJoin(c *gin.Context) {
 	eventID := c.Param("id")
 	userID, _ := c.Get("user_id")
 	uid := userID.(string)
 
-	// Already a member — no need to request
-	if _, err := h.collection.Get(models.EventMemberKey(eventID, uid), nil); err == nil {
+	// Already a member
+	var isMember bool
+	h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_event_members WHERE event_id=$1 AND user_id=$2)", eventID, uid).Scan(&isMember)
+	if isMember {
 		c.JSON(http.StatusConflict, gin.H{"error": "already a member of this event"})
 		return
 	}
 
-	// If a pending request already exists return it (idempotent).
-	// If a previous request was approved or rejected, delete it so the user can re-apply.
-	if existing, err := h.collection.Get(models.JoinRequestKey(eventID, uid), nil); err == nil {
-		var jr models.JoinRequest
-		existing.Content(&jr)
-		if jr.Status == models.JoinRequestPending {
-			c.JSON(http.StatusOK, jr)
+	// Check for existing request
+	var existingStatus string
+	var existingID string
+	h.db.QueryRow("SELECT id, status FROM pt_event_join_requests WHERE event_id=$1 AND user_id=$2", eventID, uid).Scan(&existingID, &existingStatus)
+
+	if existingID != "" {
+		if existingStatus == string(models.JoinRequestPending) {
+			row := h.db.QueryRow(joinRequestQuery+" WHERE jr.id=$1", existingID)
+			jr, err := scanJoinRequestRow(row)
+			if err == nil {
+				c.JSON(http.StatusOK, jr)
+			}
 			return
 		}
-		h.collection.Remove(models.JoinRequestKey(eventID, uid), nil)
+		// Delete rejected/approved request so user can re-apply
+		h.db.Exec("DELETE FROM pt_event_join_requests WHERE id=$1", existingID)
 	}
-
-	// Fetch user info for the request doc
-	ur, err := h.collection.Get("user::"+uid, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load user"})
-		return
-	}
-	var u models.User
-	ur.Content(&u)
 
 	var body struct {
 		Answers map[string]string `json:"answers"`
 	}
 	c.ShouldBindJSON(&body)
 
-	// Snapshot the questions in use at the time of the request
+	// Get join questions from event settings
 	var questions []models.JoinQuestion
-	if er, err := h.collection.Get("event::"+eventID, nil); err == nil {
-		var ev models.Event
-		if er.Content(&ev) == nil && len(ev.JoinQuestions) > 0 {
-			questions = ev.JoinQuestions
-		}
-	}
+	var questionsJSON []byte
+	h.db.QueryRow("SELECT settings_join_request FROM pt_events WHERE id=$1", eventID).Scan(&questionsJSON)
+	jsonUnmarshal(questionsJSON, &questions)
 	if len(questions) == 0 {
 		questions = models.DefaultJoinQuestions
 	}
 
-	jr := models.JoinRequest{
-		ID:        uuid.New().String(),
-		Type:      "join_request",
-		EventID:   eventID,
-		UserID:    uid,
-		UserName:  u.Name,
-		UserEmail: u.Email,
-		Username:  u.Username,
-		Status:    models.JoinRequestPending,
-		Questions: questions,
-		Answers:   body.Answers,
-		CreatedAt: time.Now().UTC(),
-	}
-
-	if _, err := h.collection.Insert(models.JoinRequestKey(eventID, uid), jr, nil); err != nil {
+	var id string
+	err := h.db.QueryRow(
+		`INSERT INTO pt_event_join_requests (event_id, user_id, status, questions, answers)
+		 VALUES ($1, $2, 'pending', $3, $4) RETURNING id`,
+		eventID, uid, jsonMarshal(questions), jsonMarshal(body.Answers),
+	).Scan(&id)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit request"})
 		return
 	}
 
-	// Persist answers to the user's own profile document
+	// Persist personal details from answers to pt_users
 	if len(body.Answers) > 0 {
-		u.Club = body.Answers["team"]
-		u.Address = body.Answers["address"]
-		u.Tags = body.Answers["tags"]
-		if ageStr := body.Answers["age"]; ageStr != "" {
-			fmt.Sscanf(ageStr, "%d", &u.Age)
+		ageStr := body.Answers["age"]
+		var age interface{}
+		if ageStr != "" {
+			var ageInt int
+			fmt.Sscanf(ageStr, "%d", &ageInt)
+			if ageInt > 0 {
+				age = ageInt
+			}
 		}
-		h.collection.Upsert("user::"+uid, u, nil)
+		h.db.Exec(
+			`UPDATE pt_users SET
+			   email   = COALESCE(NULLIF($1,''), email),
+			   age     = COALESCE($2, age),
+			   phone   = COALESCE(NULLIF($3,''), phone),
+			   address = COALESCE(NULLIF($4,''), address),
+			   tags    = COALESCE(NULLIF($5,''), tags),
+			   updated_at = NOW()
+			 WHERE id = $6`,
+			nullableStr(body.Answers["email"]), age,
+			nullableStr(body.Answers["phone"]), nullableStr(body.Answers["address"]),
+			nullableStr(body.Answers["tags"]), uid,
+		)
 	}
+
+	row := h.db.QueryRow(joinRequestQuery+" WHERE jr.id=$1", id)
+	jr, err := scanJoinRequestRow(row)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load join request"})
+		return
+	}
+	jr.Questions = questions
+	jr.Answers = body.Answers
 
 	h.hub.Broadcast(models.WSMessage{Type: "join_request", EventID: eventID, Data: jr})
 	c.JSON(http.StatusCreated, jr)
@@ -97,13 +173,15 @@ func (h *Handler) GetMyJoinRequest(c *gin.Context) {
 	eventID := c.Param("id")
 	userID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get(models.JoinRequestKey(eventID, userID.(string)), nil)
+	row := h.db.QueryRow(
+		joinRequestQuery+" WHERE jr.event_id=$1 AND jr.user_id=$2",
+		eventID, userID.(string),
+	)
+	jr, err := scanJoinRequestRow(row)
 	if err != nil {
 		c.JSON(http.StatusOK, nil)
 		return
 	}
-	var jr models.JoinRequest
-	result.Content(&jr)
 	c.JSON(http.StatusOK, jr)
 }
 
@@ -116,26 +194,23 @@ func (h *Handler) GetJoinRequests(c *gin.Context) {
 		return
 	}
 
-	q := fmt.Sprintf(
-		"SELECT jr.* FROM `%s` AS jr WHERE jr.event_id = $event_id AND jr.type = 'join_request' AND jr.status = 'pending' ORDER BY jr.created_at ASC",
-		h.bucket,
+	rows, err := h.db.Query(
+		joinRequestQuery+" WHERE jr.event_id=$1 AND jr.status='pending' ORDER BY jr.created_at ASC",
+		eventID,
 	)
-	rows, err := h.cluster.Query(q, queryOptions(map[string]interface{}{"event_id": eventID}))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var requests []models.JoinRequest
+	requests := []models.JoinRequest{}
 	for rows.Next() {
-		var jr models.JoinRequest
-		if rows.Row(&jr) == nil {
-			requests = append(requests, jr)
+		jr, err := scanJoinRequestRows(rows)
+		if err != nil {
+			continue
 		}
-	}
-	if requests == nil {
-		requests = []models.JoinRequest{}
+		requests = append(requests, *jr)
 	}
 	c.JSON(http.StatusOK, requests)
 }
@@ -151,7 +226,9 @@ func (h *Handler) ReviewJoinRequest(c *gin.Context) {
 	}
 
 	var req struct {
-		Status models.JoinRequestStatus `json:"status" binding:"required"`
+		Status   models.JoinRequestStatus `json:"status" binding:"required"`
+		Role     models.EventRole         `json:"role"`
+		TeamName string                   `json:"team_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -162,44 +239,43 @@ func (h *Handler) ReviewJoinRequest(c *gin.Context) {
 		return
 	}
 
-	result, err := h.collection.Get(models.JoinRequestKey(eventID, targetUserID), nil)
+	row := h.db.QueryRow(
+		joinRequestQuery+" WHERE jr.event_id=$1 AND jr.user_id=$2",
+		eventID, targetUserID,
+	)
+	jr, err := scanJoinRequestRow(row)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "join request not found"})
 		return
 	}
-	var jr models.JoinRequest
-	result.Content(&jr)
 
 	now := time.Now().UTC()
+	h.db.Exec(
+		`UPDATE pt_event_join_requests SET status=$1, reviewed_by=$2, reviewed_at=$3, updated_at=NOW()
+		 WHERE event_id=$4 AND user_id=$5`,
+		string(req.Status), callerID.(string), now, eventID, targetUserID,
+	)
 	jr.Status = req.Status
 	jr.ReviewedBy = callerID.(string)
 	jr.ReviewedAt = &now
-	h.collection.Upsert(models.JoinRequestKey(eventID, targetUserID), jr, nil)
 
 	if req.Status == models.JoinRequestApproved {
-		// Load profile from user doc — it was updated when the join request was submitted
-		var u models.User
-		if ur, err := h.collection.Get("user::"+targetUserID, nil); err == nil {
-			ur.Content(&u)
+		role := req.Role
+		if role == "" {
+			role = models.EventRoleViewer
 		}
-		member := models.EventMember{
-			ID:        uuid.New().String(),
-			Type:      "event_member",
-			EventID:   eventID,
-			UserID:    targetUserID,
-			UserName:  jr.UserName,
-			UserEmail: jr.UserEmail,
-			Role:      models.EventRoleViewer,
-			Age:       u.Age,
-			Club:      u.Club,
-			Address:   u.Address,
-			Phone:     u.Phone,
-			Tags:      u.Tags,
-			AddedBy:   callerID.(string),
-			CreatedAt: now,
+
+		h.db.Exec(
+			`INSERT INTO pt_event_members (event_id, user_id, role, team_name, added_by)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (event_id, user_id) DO NOTHING`,
+			eventID, targetUserID, string(role), nullableStr(req.TeamName), callerID.(string),
+		)
+
+		memberRow := h.db.QueryRow(memberQuery+" WHERE em.event_id=$1 AND em.user_id=$2", eventID, targetUserID)
+		if m, err := scanMemberRow(memberRow); err == nil {
+			h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: m})
 		}
-		h.collection.Insert(models.EventMemberKey(eventID, targetUserID), member, nil)
-		h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: member})
 	}
 
 	h.hub.Broadcast(models.WSMessage{Type: "join_request_reviewed", EventID: eventID, Data: jr})

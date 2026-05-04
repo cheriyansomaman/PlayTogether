@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
 	"net/http"
 	"sort"
-	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"github.com/playtogether/backend/models"
 )
 
@@ -45,15 +45,6 @@ type DashboardResponse struct {
 	TopIndividuals   []IndividualScore `json:"top_individuals"`
 }
 
-// inList builds a literal SQL IN clause value — avoids array named-parameter issues.
-func inList(ids []string) string {
-	quoted := make([]string, len(ids))
-	for i, id := range ids {
-		quoted[i] = `"` + strings.ReplaceAll(id, `"`, `\"`) + `"`
-	}
-	return "[" + strings.Join(quoted, ",") + "]"
-}
-
 func (h *Handler) GetDashboard(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	uid := userID.(string)
@@ -65,151 +56,88 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 		TopIndividuals:   []IndividualScore{},
 	}
 
-	// Load user profile for email-based participant lookup
-	ur, err := h.collection.Get("user::"+uid, nil)
+	// ── 1. Events I'm a member of ─────────────────────────────────────────────
+	evRows, err := h.db.Query(`
+		SELECT e.id, e.name, e.description, e.location, e.start_date, e.end_date,
+		       e.event_type, e.status, e.share_token,
+		       e.settings_point_system, e.settings_join_request, e.settings_user_template,
+		       e.created_by, e.created_at, e.updated_at, em.role
+		FROM pt_events e
+		JOIN pt_event_members em ON e.id = em.event_id
+		WHERE em.user_id = $1
+		ORDER BY e.created_at DESC
+	`, uid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load events"})
 		return
 	}
-	var u models.User
-	ur.Content(&u)
 
-	// ── 1. All events (reuses the working ListEvents query) ───────────────────
-	evQ := fmt.Sprintf(
-		"SELECT e.* FROM `%s` AS e WHERE e.type = 'event' ORDER BY e.created_at DESC",
-		h.bucket,
-	)
-	evRows, err := h.cluster.Query(evQ, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load events: " + err.Error()})
-		return
-	}
-	defer evRows.Close()
-
-	var allEvents []models.Event
-	for evRows.Next() {
-		var ev models.Event
-		if evRows.Row(&ev) == nil {
-			allEvents = append(allEvents, ev)
-		}
-	}
-
-	// ── 2. KV-check membership for each event ─────────────────────────────────
-	// Uses EventMemberKey which is the same pattern already used everywhere.
-	eventMap := map[string]models.Event{}
 	var myEvents []MyEventSummary
-	var eventIDs []string
+	eventMap := map[string]models.Event{}
+	eventIDs := []string{}
 
-	for _, ev := range allEvents {
-		res, err := h.collection.Get(models.EventMemberKey(ev.ID, uid), nil)
-		if err != nil {
-			continue // not a member
-		}
-		var m models.EventMember
-		if res.Content(&m) != nil {
+	for evRows.Next() {
+		var e models.Event
+		var desc, loc, sd, ed, eType, token sql.NullString
+		var psJSON, jrJSON, utJSON []byte
+		var role string
+
+		if err := evRows.Scan(
+			&e.ID, &e.Name, &desc, &loc, &sd, &ed,
+			&eType, &e.Status, &token,
+			&psJSON, &jrJSON, &utJSON,
+			&e.CreatedBy, &e.CreatedAt, &e.UpdatedAt,
+			&role,
+		); err != nil {
 			continue
 		}
-		myEvents = append(myEvents, MyEventSummary{Event: ev, Role: string(m.Role)})
-		eventIDs = append(eventIDs, ev.ID)
-		eventMap[ev.ID] = ev
+		e.Description = desc.String
+		e.Location = loc.String
+		e.StartDate = sd.String
+		e.EndDate = ed.String
+		e.EventType = eType.String
+		e.ShareToken = token.String
+		jsonUnmarshal(psJSON, &e.PointSystem)
+		jsonUnmarshal(jrJSON, &e.JoinQuestions)
+		var tmpl struct {
+			Fields []models.UserTemplateField `json:"fields"`
+			Unique []string                   `json:"unique"`
+		}
+		jsonUnmarshal(utJSON, &tmpl)
+		e.UserTemplateFields = tmpl.Fields
+		e.UserTemplateUnique = tmpl.Unique
+
+		myEvents = append(myEvents, MyEventSummary{Event: e, Role: role})
+		eventMap[e.ID] = e
+		eventIDs = append(eventIDs, e.ID)
 	}
+	evRows.Close()
 
 	if len(eventIDs) == 0 {
 		c.JSON(http.StatusOK, empty)
 		return
 	}
 
-	eventIn := inList(eventIDs)
-
-	// ── 3. My participations — filter by email within my events ───────────────
-	partQ := fmt.Sprintf(
-		"SELECT p.* FROM `%s` AS p WHERE p.type = 'participant' AND p.email = $email AND p.event_id IN %s",
-		h.bucket, eventIn,
-	)
-	partRows, err := h.cluster.Query(partQ, queryOptions(map[string]interface{}{"email": u.Email}))
-	var myParts []models.Participant
-	gameIDSet := map[string]bool{}
-	if err == nil {
-		defer partRows.Close()
-		for partRows.Next() {
-			var p models.Participant
-			if partRows.Row(&p) == nil {
-				myParts = append(myParts, p)
-				gameIDSet[p.GameID] = true
-			}
-		}
-	}
-
-	// ── 4. All results across my events ──────────────────────────────────────
-	resQ := fmt.Sprintf(
-		"SELECT r.* FROM `%s` AS r WHERE r.type = 'result' AND r.event_id IN %s",
-		h.bucket, eventIn,
-	)
-	resRows, err := h.cluster.Query(resQ, nil)
+	// ── 2. All results across my events ───────────────────────────────────────
 	var allResults []models.Result
+	resRows, err := h.db.Query(
+		"SELECT "+resultSelectCols+" FROM pt_event_results WHERE event_id = ANY($1)",
+		pq.Array(eventIDs),
+	)
 	if err == nil {
-		defer resRows.Close()
 		for resRows.Next() {
-			var r models.Result
-			if resRows.Row(&r) == nil {
-				allResults = append(allResults, r)
+			r, err := scanResultRows(resRows)
+			if err == nil {
+				allResults = append(allResults, *r)
 			}
 		}
+		resRows.Close()
 	}
 
-	// ── 5. Games I participated in — KV get each ─────────────────────────────
-	gameMap := map[string]models.Game{}
-	for gid := range gameIDSet {
-		if gr, err := h.collection.Get("game::"+gid, nil); err == nil {
-			var g models.Game
-			if gr.Content(&g) == nil {
-				gameMap[gid] = g
-			}
-		}
-	}
-
-	// ── 6. Build participation summaries ──────────────────────────────────────
-	resultByGame := map[string]models.Result{}
-	for _, r := range allResults {
-		resultByGame[r.GameID] = r
-	}
-
+	// ── 3. My participations (matched by email) ────────────────────────────────
 	var myParticipations []MyParticipation
-	for _, p := range myParts {
-		game, ok := gameMap[p.GameID]
-		if !ok {
-			continue
-		}
-		sum := MyParticipation{
-			Game:      game,
-			EventName: eventMap[game.EventID].Name,
-		}
-		if result, ok := resultByGame[p.GameID]; ok {
-			for _, entry := range result.Entries {
-				if entry.ParticipantID == p.ID || entry.ParticipantName == p.Name {
-					sum.Position = entry.Position
-					sum.Score = entry.Score
-					break
-				}
-			}
-		}
-		myParticipations = append(myParticipations, sum)
-	}
-	sort.Slice(myParticipations, func(i, j int) bool {
-		pi, pj := myParticipations[i].Position, myParticipations[j].Position
-		if pi == 0 {
-			pi = 9999
-		}
-		if pj == 0 {
-			pj = 9999
-		}
-		if pi != pj {
-			return pi < pj
-		}
-		return myParticipations[i].Score > myParticipations[j].Score
-	})
 
-	// ── 7. Team leaderboard ───────────────────────────────────────────────────
+	// ── 4. Team leaderboard ───────────────────────────────────────────────────
 	teamScores := map[string]*TeamScore{}
 	for _, result := range allResults {
 		for _, entry := range result.Entries {
@@ -230,15 +158,12 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 			}
 		}
 	}
-	// Enrich with team color via KV
 	for key, ts := range teamScores {
 		if ts.TeamID != "" {
-			if tr, err := h.collection.Get("team::"+ts.TeamID, nil); err == nil {
-				var t models.Team
-				if tr.Content(&t) == nil {
-					teamScores[key].TeamColor = t.Color
-					teamScores[key].TeamName = t.Name
-				}
+			team, err := h.getTeamByID(ts.TeamID)
+			if err == nil {
+				teamScores[key].TeamColor = team.Color
+				teamScores[key].TeamName = team.Name
 			}
 		}
 	}
@@ -250,7 +175,7 @@ func (h *Handler) GetDashboard(c *gin.Context) {
 		return teamLeaderboard[i].TotalScore > teamLeaderboard[j].TotalScore
 	})
 
-	// ── 8. Top 3 individuals ──────────────────────────────────────────────────
+	// ── 5. Top 3 individuals ──────────────────────────────────────────────────
 	indScores := map[string]*IndividualScore{}
 	for _, result := range allResults {
 		for _, entry := range result.Entries {

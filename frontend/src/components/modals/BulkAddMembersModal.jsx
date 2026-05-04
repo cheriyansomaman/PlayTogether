@@ -71,7 +71,7 @@ function buildBulkEntry(values, templateFields, role) {
     phone:      getVal('phone'),
     email:      getVal('email'),
     address:    getVal('address'),
-    club:       getVal('team_name'),
+    team_id:    getVal('team_name'),
     tags,
     role,
   }
@@ -117,6 +117,7 @@ function parseCSV(text, templateFields, defaultRole) {
     const field = templateFields.find((f) => f.label.toLowerCase() === h || f.id.toLowerCase() === h)
     if (field) colMap[i] = field.id
     else if (h === 'role') colMap[i] = '__role__'
+    else if (h === 'team') colMap[i] = 'team_name'
   })
 
   const primaryField = templateFields.find((f) => f.required) || templateFields[0]
@@ -288,10 +289,10 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
 
   const downloadCSVTemplate = () => {
     const escape = (v) => (v.includes(',') ? `"${v}"` : v)
-    const headers = [...templateFields.map((f) => f.label), 'Role']
+    const headers = [...templateFields.map((f) => f.id === 'team_name' ? 'Team' : f.label), 'Role']
     const sample  = templateFields.map((f) => {
       if (f.id === 'full_name')  return 'John Smith'
-      if (f.id === 'team_name')  return teams[0]?.name || 'Team Alpha'
+      if (f.id === 'team_name')  return teams[0]?.id || ''
       if (f.id === 'age')        return '25'
       if (f.id === 'phone')      return '+1234567890'
       if (f.id === 'email')      return 'john@example.com'
@@ -352,7 +353,7 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
                       >
                         <option value="">— Select team —</option>
                         {teams.map((t) => (
-                          <option key={t.id} value={t.name}>{t.name}</option>
+                          <option key={t.id} value={t.id}>{t.name}</option>
                         ))}
                       </select>
                     ) : isMultiline(field) ? (
@@ -587,7 +588,7 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
                                         onChange={(e) => setRowField(i, f.id, e.target.value)}
                                       >
                                         <option value="">—</option>
-                                        {teams.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
+                                        {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                       </select>
                                     ) : (
                                       <input

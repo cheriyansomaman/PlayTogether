@@ -2,44 +2,27 @@ package models
 
 import "time"
 
-// ── System-level roles ────────────────────────────────────────────────────────
-
-type Role string
-
-const (
-	RoleAdmin  Role = "admin"
-	RoleMember Role = "member"
-	RoleUser   Role = "user"
-)
-
 type User struct {
 	ID           string    `json:"id"`
-	Type         string    `json:"type"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
 	FirstName    string    `json:"first_name,omitempty"`
 	LastName     string    `json:"last_name,omitempty"`
+	Name         string    `json:"name"`
 	Username     string    `json:"username,omitempty"`
 	PasswordHash string    `json:"password_hash,omitempty"`
-	Role         Role      `json:"role"`
 	Age          int       `json:"age,omitempty"`
-	Club         string    `json:"club,omitempty"`
 	Address      string    `json:"address,omitempty"`
-	Phone        string    `json:"phone,omitempty"`
-	Tags         string    `json:"tags,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type UserResponse struct {
 	ID        string    `json:"id"`
-	Email     string    `json:"email"`
+	Email     string    `json:"email,omitempty"`
 	Name      string    `json:"name"`
 	FirstName string    `json:"first_name,omitempty"`
 	LastName  string    `json:"last_name,omitempty"`
 	Username  string    `json:"username,omitempty"`
-	Role      Role      `json:"role"`
 	Age       int       `json:"age,omitempty"`
-	Club      string    `json:"club,omitempty"`
 	Address   string    `json:"address,omitempty"`
 	Phone     string    `json:"phone,omitempty"`
 	Tags      string    `json:"tags,omitempty"`
@@ -48,10 +31,10 @@ type UserResponse struct {
 
 func (u *User) ToResponse() UserResponse {
 	return UserResponse{
-		ID: u.ID, Email: u.Email, Name: u.Name,
+		ID:        u.ID,
 		FirstName: u.FirstName, LastName: u.LastName, Username: u.Username,
-		Role: u.Role, Age: u.Age, Club: u.Club, Address: u.Address,
-		Phone: u.Phone, Tags: u.Tags, CreatedAt: u.CreatedAt,
+		Age: u.Age, Address: u.Address,
+		CreatedAt: u.CreatedAt,
 	}
 }
 
@@ -65,28 +48,30 @@ const (
 	EventRoleViewer EventRole = "viewer"
 )
 
-// EventMember records a user's role within a specific event.
-// KV key: event_member::{event_id}::{user_id}
+// EventMember records a user's role and team within a specific event.
+// Personal details (name, email, age, etc.) are loaded via JOIN with pt_users.
 type EventMember struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	EventID   string    `json:"event_id"`
-	UserID    string    `json:"user_id"`
-	UserName  string    `json:"user_name"`
-	UserEmail string    `json:"user_email"`
-	Username  string    `json:"username,omitempty"`
-	Role      EventRole `json:"role"`
-	Age       int       `json:"age,omitempty"`
-	Club      string    `json:"club,omitempty"`
-	Address   string    `json:"address,omitempty"`
-	Phone     string    `json:"phone,omitempty"`
-	Tags      string    `json:"tags,omitempty"`
-	AddedBy   string    `json:"added_by"`
+	ID       string    `json:"id"`
+	EventID  string    `json:"event_id"`
+	UserID   string    `json:"user_id"`
+	Role     EventRole `json:"role"`
+	TeamID   string    `json:"team_id,omitempty"`
+	TeamName string    `json:"team_name,omitempty"`
+	AddedBy  string    `json:"added_by,omitempty"`
+	JoinedAt time.Time `json:"joined_at"`
+	// From pt_users
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+	Username  string `json:"username,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Age       int    `json:"age,omitempty"`
+	Address   string `json:"address,omitempty"`
+	Phone     string `json:"phone,omitempty"`
+	Tags      string `json:"tags,omitempty"`
+	// Computed aliases used by the frontend
+	UserName  string    `json:"user_name,omitempty"`
+	UserEmail string    `json:"user_email,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-func EventMemberKey(eventID, userID string) string {
-	return "event_member::" + eventID + "::" + userID
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -107,22 +92,27 @@ type JoinQuestion struct {
 	Required bool   `json:"required"`
 }
 
+// DefaultJoinQuestions collects the personal details needed before joining an event.
+// Answers are persisted to pt_users; team assignment is decided by the organizer on approval.
 var DefaultJoinQuestions = []JoinQuestion{
+	{ID: "email", Label: "Email", Type: "text", Required: true},
 	{ID: "age", Label: "Age", Type: "number", Required: true},
-	{ID: "team", Label: "Team / Club", Type: "text", Required: true},
+	{ID: "phone", Label: "Phone", Type: "text", Required: false},
 	{ID: "address", Label: "Address", Type: "textarea", Required: true},
 	{ID: "tags", Label: "Tags", Type: "tags", Required: false},
 }
 
 type PointRule struct {
-	Rank   int `json:"rank"`
-	Points int `json:"points"`
+	ID       string `json:"id,omitempty"`
+	Rank     int    `json:"rank"`
+	RankName string `json:"rank_name"`
+	Points   int    `json:"points"`
 }
 
 var DefaultPointSystem = []PointRule{
-	{Rank: 1, Points: 3},
-	{Rank: 2, Points: 2},
-	{Rank: 3, Points: 1},
+	{Rank: 1, RankName: "Gold", Points: 3},
+	{Rank: 2, RankName: "Silver", Points: 2},
+	{Rank: 3, RankName: "Bronze", Points: 1},
 }
 
 type UserTemplateField struct {
@@ -133,7 +123,6 @@ type UserTemplateField struct {
 
 type Event struct {
 	ID                 string              `json:"id"`
-	Type               string              `json:"type"`
 	Name               string              `json:"name"`
 	Description        string              `json:"description,omitempty"`
 	EventType          string              `json:"event_type"`
@@ -141,6 +130,8 @@ type Event struct {
 	StartDate          string              `json:"start_date"`
 	EndDate            string              `json:"end_date,omitempty"`
 	Status             EventStatus         `json:"status"`
+	LogoBase64         string              `json:"logo_base64,omitempty"`
+	LogoURL            string              `json:"logo_url,omitempty"`
 	JoinQuestions      []JoinQuestion      `json:"join_questions,omitempty"`
 	PointSystem        []PointRule         `json:"point_system,omitempty"`
 	UserTemplateFields []UserTemplateField `json:"user_template_fields,omitempty"`
@@ -164,7 +155,6 @@ const (
 
 type Game struct {
 	ID             string     `json:"id"`
-	Type           string     `json:"type"`
 	EventID        string     `json:"event_id"`
 	Name           string     `json:"name"`
 	Description    string     `json:"description,omitempty"`
@@ -187,12 +177,12 @@ type Game struct {
 
 type Team struct {
 	ID          string    `json:"id"`
-	Type        string    `json:"type"`
 	EventID     string    `json:"event_id"`
 	Name        string    `json:"name"`
 	Color       string    `json:"color,omitempty"`
 	Description string    `json:"description,omitempty"`
 	LogoURL     string    `json:"logo_url,omitempty"`
+	LogoBase64  string    `json:"logo_base64,omitempty"`
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -201,9 +191,8 @@ type Team struct {
 
 type Participant struct {
 	ID          string    `json:"id"`
-	Type        string    `json:"type"`
 	EventID     string    `json:"event_id"`
-	GameID      string    `json:"game_id"`
+	GameID      string    `json:"game_id,omitempty"`
 	TeamID      string    `json:"team_id,omitempty"`
 	Name        string    `json:"name"`
 	Email       string    `json:"email,omitempty"`
@@ -229,7 +218,6 @@ type ResultEntry struct {
 
 type Result struct {
 	ID         string        `json:"id"`
-	Type       string        `json:"type"`
 	GameID     string        `json:"game_id"`
 	EventID    string        `json:"event_id"`
 	Entries    []ResultEntry `json:"entries"`
@@ -249,24 +237,36 @@ const (
 	JoinRequestRejected JoinRequestStatus = "rejected"
 )
 
+// JoinRequest stores the event join application.
+// User identity details are loaded via JOIN with pt_users.
 type JoinRequest struct {
 	ID         string            `json:"id"`
-	Type       string            `json:"type"`
 	EventID    string            `json:"event_id"`
 	UserID     string            `json:"user_id"`
-	UserName   string            `json:"user_name"`
-	UserEmail  string            `json:"user_email"`
-	Username   string            `json:"username,omitempty"`
 	Status     JoinRequestStatus `json:"status"`
 	Questions  []JoinQuestion    `json:"questions,omitempty"`
 	Answers    map[string]string `json:"answers,omitempty"`
 	ReviewedBy string            `json:"reviewed_by,omitempty"`
 	ReviewedAt *time.Time        `json:"reviewed_at,omitempty"`
 	CreatedAt  time.Time         `json:"created_at"`
+	// From pt_users
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+	Username  string `json:"username,omitempty"`
+	Email     string `json:"email,omitempty"`
 }
 
-func JoinRequestKey(eventID, userID string) string {
-	return "join_request::" + eventID + "::" + userID
+// ── Role Access ───────────────────────────────────────────────────────────────
+
+type RoleAccessRule struct {
+	ID              string    `json:"id"`
+	EventID         string    `json:"event_id,omitempty"`
+	Action          string    `json:"action"`
+	RoleAdmin       bool      `json:"role_admin"`
+	RoleCoordinator bool      `json:"role_coordinator"`
+	RoleViewer      bool      `json:"role_viewer"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────

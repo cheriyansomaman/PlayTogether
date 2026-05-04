@@ -4,13 +4,8 @@ import { listEvents, getDashboard } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useWS } from '../context/WSContext'
 import CreateEventModal from '../components/modals/CreateEventModal'
-
-const sportEmoji = {
-  athletics: '🏃', swimming: '🏊', cycling: '🚴', football: '⚽', basketball: '🏀',
-  tennis: '🎾', volleyball: '🏐', cricket: '🏏', baseball: '⚾', rugby: '🏉',
-  golf: '⛳', boxing: '🥊', wrestling: '🤼', gymnastics: '🤸', 'multi-sport': '🏆',
-  other: '🎯',
-}
+import { SportIcon } from '../utils/sportIcons'
+import { Trophy, Target, Building2, Ticket, Medal, Award, ClipboardList, Clock3, CheckCircle } from 'lucide-react'
 
 const ROLE_COLOR = {
   admin:  'text-purple-400 bg-purple-500/10 border-purple-500/30',
@@ -21,29 +16,37 @@ const ROLE_COLOR = {
 function welcomeKey(userId) { return `pt_welcomed_${userId}` }
 
 // ── Welcome screen ────────────────────────────────────────────────────────────
-function WelcomeScreen({ user, onCreateEvent, onJoinEvent }) {
+function WelcomeScreen({ user, hasEvents, onCreateEvent, onJoinEvent, onViewEvents }) {
   return (
     <div className="fixed inset-0 bg-slate-800 z-50 flex flex-col items-center justify-center px-4">
       <div className="text-center mb-10">
-        <div className="text-6xl mb-4">🏆</div>
+        <div className="mb-4 text-white"><Trophy size={56} /></div>
         <h1 className="text-3xl sm:text-4xl font-bold text-white">Welcome to PlayTogether</h1>
         <p className="text-slate-400 mt-2 text-base">
           Hello, <span className="text-white font-semibold">{user?.name}</span>! What would you like to do?
         </p>
       </div>
-      <div className="grid sm:grid-cols-2 gap-5 w-full max-w-2xl">
+      <div className={`grid gap-5 w-full ${hasEvents ? 'sm:grid-cols-3 max-w-4xl' : 'sm:grid-cols-2 max-w-2xl'}`}>
         <button onClick={onCreateEvent} className="group card p-8 text-left hover:border-blue-500 hover:bg-slate-600/50 transition-all duration-200">
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-200">🏟️</div>
+          <div className="mb-4 text-white group-hover:scale-110 transition-transform duration-200"><Building2 size={48} /></div>
           <h2 className="text-xl font-bold text-white mb-2">Create an Event</h2>
           <p className="text-slate-400 text-sm leading-relaxed">Set up a new sports event. Add games, teams, and participants — then track results live.</p>
           <div className="mt-5 inline-flex items-center gap-2 text-blue-400 text-sm font-medium group-hover:gap-3 transition-all">Get started <span>→</span></div>
         </button>
         <button onClick={onJoinEvent} className="group card p-8 text-left hover:border-emerald-500 hover:bg-slate-600/50 transition-all duration-200">
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform duration-200">🎯</div>
+          <div className="mb-4 text-emerald-400 group-hover:scale-110 transition-transform duration-200"><Target size={48} /></div>
           <h2 className="text-xl font-bold text-white mb-2">Join an Event</h2>
           <p className="text-slate-400 text-sm leading-relaxed">Browse events, follow live scores, and watch results update in real time.</p>
           <div className="mt-5 inline-flex items-center gap-2 text-emerald-400 text-sm font-medium group-hover:gap-3 transition-all">Browse events <span>→</span></div>
         </button>
+        {hasEvents && (
+          <button onClick={onViewEvents} className="group card p-8 text-left hover:border-purple-500 hover:bg-slate-600/50 transition-all duration-200">
+            <div className="mb-4 text-purple-400 group-hover:scale-110 transition-transform duration-200"><Ticket size={48} /></div>
+            <h2 className="text-xl font-bold text-white mb-2">View My Events</h2>
+            <p className="text-slate-400 text-sm leading-relaxed">You've already been added to events. Jump back in and manage them.</p>
+            <div className="mt-5 inline-flex items-center gap-2 text-purple-400 text-sm font-medium group-hover:gap-3 transition-all">Go to events <span>→</span></div>
+          </button>
+        )}
       </div>
       <p className="text-slate-500 text-xs mt-10">
         Signed in as <span className={`badge badge-${user?.role} ml-1`}>{user?.role}</span>
@@ -56,7 +59,7 @@ function WelcomeScreen({ user, onCreateEvent, onJoinEvent }) {
 function StatCard({ label, value, icon }) {
   return (
     <div className="card p-5 flex items-center gap-4">
-      <div className="text-3xl">{icon}</div>
+      <div className="text-slate-300 shrink-0">{icon}</div>
       <div>
         <div className="text-2xl font-bold text-white">{value}</div>
         <div className="text-xs text-slate-400">{label}</div>
@@ -67,11 +70,10 @@ function StatCard({ label, value, icon }) {
 
 // ── Event card (admin/member view) ────────────────────────────────────────────
 function EventCard({ event }) {
-  const emoji = sportEmoji[event.event_type] || '🎯'
   return (
     <Link to={`/events/${event.id}`} className="card p-5 hover:border-slate-500 transition-colors block">
       <div className="flex items-start justify-between mb-3">
-        <span className="text-2xl">{emoji}</span>
+        <span className="text-slate-300"><SportIcon sport={event.event_type} size={24} /></span>
         <span className={`badge badge-${event.status}`}>{event.status}</span>
       </div>
       <h3 className="font-semibold text-white truncate">{event.name}</h3>
@@ -83,11 +85,10 @@ function EventCard({ event }) {
 
 // ── Viewer: my joined event card ──────────────────────────────────────────────
 function MyEventCard({ event, role }) {
-  const emoji = sportEmoji[event.event_type] || '🎯'
   return (
     <Link to={`/events/${event.id}`} className="card p-4 hover:border-slate-500 transition-colors block">
       <div className="flex items-start justify-between mb-2">
-        <span className="text-xl">{emoji}</span>
+        <span className="text-slate-300"><SportIcon sport={event.event_type} size={20} /></span>
         <div className="flex items-center gap-1.5">
           <span className={`text-xs px-2 py-0.5 rounded-full border ${ROLE_COLOR[role] || ROLE_COLOR.viewer}`}>{role}</span>
           <span className={`badge badge-${event.status} text-xs`}>{event.status}</span>
@@ -137,10 +138,10 @@ function ViewerDashboard({ user }) {
 
       {/* Personal stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Events Joined"   value={my_events.length}        icon="🎟️" />
-        <StatCard label="Games Played"    value={my_participations.length} icon="🏅" />
-        <StatCard label="Wins"            value={wins}                     icon="🏆" />
-        <StatCard label="Top-3 Finishes"  value={my_participations.filter((p) => p.position > 0 && p.position <= 3).length} icon="🎖️" />
+        <StatCard label="Events Joined"   value={my_events.length}        icon={<Ticket size={28} />} />
+        <StatCard label="Games Played"    value={my_participations.length} icon={<Medal size={28} />} />
+        <StatCard label="Wins"            value={wins}                     icon={<Trophy size={28} />} />
+        <StatCard label="Top-3 Finishes"  value={my_participations.filter((p) => p.position > 0 && p.position <= 3).length} icon={<Award size={28} />} />
       </div>
 
       {/* My events */}
@@ -151,7 +152,7 @@ function ViewerDashboard({ user }) {
         </div>
         {my_events.length === 0 ? (
           <div className="card p-8 text-center">
-            <div className="text-4xl mb-3">🎟️</div>
+            <div className="mb-3 text-slate-500 flex justify-center"><Ticket size={40} /></div>
             <p className="text-slate-400 text-sm">You haven't joined any events yet.</p>
             <Link to="/events" className="btn-primary mt-4 inline-block">Browse Events</Link>
           </div>
@@ -207,8 +208,10 @@ function AdminDashboard({ user }) {
       {showWelcome && (
         <WelcomeScreen
           user={user}
+          hasEvents={events.length > 0}
           onCreateEvent={() => { dismissWelcome(); setShowCreateModal(true) }}
           onJoinEvent={() => { dismissWelcome(); navigate('/events') }}
+          onViewEvents={() => { dismissWelcome(); navigate('/events') }}
         />
       )}
       {showCreateModal && (
@@ -234,10 +237,10 @@ function AdminDashboard({ user }) {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard label="Total Events" value={events.length} icon="📋" />
-            <StatCard label="Active"       value={active.length}    icon="🟢" />
-            <StatCard label="Upcoming"     value={upcoming.length}  icon="🔜" />
-            <StatCard label="Completed"    value={completed.length} icon="✅" />
+            <StatCard label="Total Events" value={events.length} icon={<ClipboardList size={28} />} />
+            <StatCard label="Active"       value={active.length}    icon={<span className="w-4 h-4 bg-emerald-400 rounded-full inline-block" />} />
+            <StatCard label="Upcoming"     value={upcoming.length}  icon={<Clock3 size={28} />} />
+            <StatCard label="Completed"    value={completed.length} icon={<CheckCircle size={28} />} />
           </div>
 
           {active.length > 0 && (
@@ -275,7 +278,7 @@ function AdminDashboard({ user }) {
 
           {events.length === 0 && (
             <div className="text-center py-24">
-              <div className="text-6xl mb-4">🏟️</div>
+              <div className="mb-4 text-slate-500 flex justify-center"><Building2 size={56} /></div>
               <h3 className="text-xl font-semibold text-white">No events yet</h3>
               <p className="text-slate-400 mt-2 mb-6">Create your first sports event to get started.</p>
               <div className="flex gap-3 justify-center">

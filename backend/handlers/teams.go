@@ -1,44 +1,82 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
+	"log"
 	"net/http"
-	"time"
 
-	"github.com/couchbase/gocb/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
+
+// ── Scan helpers ──────────────────────────────────────────────────────────────
+
+func scanTeamRows(rows *sql.Rows) (*models.Team, error) {
+	var t models.Team
+	var description, logoURL, logoBase64, color, createdBy sql.NullString
+
+	err := rows.Scan(
+		&t.ID, &t.EventID, &t.Name, &description,
+		&logoURL, &logoBase64, &color, &createdBy, &t.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	t.Description = description.String
+	t.LogoURL = logoURL.String
+	t.LogoBase64 = logoBase64.String
+	t.Color = color.String
+	t.CreatedBy = createdBy.String
+	return &t, nil
+}
+
+func (h *Handler) getTeamByID(id string) (*models.Team, error) {
+	rows, err := h.db.Query(
+		"SELECT id, event_id, name, description, logo_url, logo_base64, color, created_by, created_at FROM pt_event_teams WHERE id = $1",
+		id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, sql.ErrNoRows
+	}
+	return scanTeamRows(rows)
+}
+
+// ── Request types ─────────────────────────────────────────────────────────────
 
 type CreateTeamRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Color       string `json:"color"`
 	Description string `json:"description"`
 	LogoURL     string `json:"logo_url"`
+	LogoBase64  string `json:"logo_base64"`
 }
+
+// ── Handlers ──────────────────────────────────────────────────────────────────
 
 func (h *Handler) ListTeams(c *gin.Context) {
 	eventID := c.Param("id")
-	query := fmt.Sprintf(`SELECT t.* FROM `+"`"+`%s`+"`"+` AS t WHERE t.event_id = $event_id AND t.type = 'team' ORDER BY t.name ASC`, h.bucket)
-	rows, err := h.cluster.Query(query, queryOptions(map[string]interface{}{"event_id": eventID}))
+
+	rows, err := h.db.Query(
+		"SELECT id, event_id, name, description, logo_url, logo_base64, color, created_by, created_at FROM pt_event_teams WHERE event_id = $1 ORDER BY name ASC",
+		eventID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 	defer rows.Close()
 
-	var teams []models.Team
+	teams := []models.Team{}
 	for rows.Next() {
-		var t models.Team
-		if err := rows.Row(&t); err != nil {
+		t, err := scanTeamRows(rows)
+		if err != nil {
 			continue
 		}
-		teams = append(teams, t)
-	}
-
-	if teams == nil {
-		teams = []models.Team{}
+		teams = append(teams, *t)
 	}
 	c.JSON(http.StatusOK, teams)
 }
@@ -52,7 +90,9 @@ func (h *Handler) CreateTeam(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.collection.Get("event::"+eventID, nil); err != nil {
+	var exists bool
+	h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_events WHERE id = $1)", eventID).Scan(&exists)
+	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
 		return
 	}
@@ -63,44 +103,30 @@ func (h *Handler) CreateTeam(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-
-	team := models.Team{
-		ID:          uuid.New().String(),
-		Type:        "team",
-		EventID:     eventID,
-		Name:        req.Name,
-		Color:       req.Color,
-		Description: req.Description,
-		LogoURL:     req.LogoURL,
-		CreatedBy:   userID.(string),
-		CreatedAt:   time.Now().UTC(),
-	}
-
-	_, err := h.collection.Insert("team::"+team.ID, team, nil)
+	var id string
+	err := h.db.QueryRow(
+		`INSERT INTO pt_event_teams (event_id, name, description, logo_url, logo_base64, color, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		eventID, req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), callerID.(string),
+	).Scan(&id)
 	if err != nil {
+		log.Printf("create team error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create team"})
 		return
 	}
 
+	team, _ := h.getTeamByID(id)
 	h.hub.Broadcast(models.WSMessage{Type: "team_created", EventID: eventID, Data: team})
 	c.JSON(http.StatusCreated, team)
 }
 
 func (h *Handler) GetTeam(c *gin.Context) {
 	id := c.Param("id")
-	result, err := h.collection.Get("team::"+id, nil)
+	team, err := h.getTeamByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
 		return
 	}
-
-	var team models.Team
-	if err := result.Content(&team); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse team"})
-		return
-	}
-
 	c.JSON(http.StatusOK, team)
 }
 
@@ -108,15 +134,9 @@ func (h *Handler) UpdateTeam(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("team::"+id, nil)
+	team, err := h.getTeamByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
-		return
-	}
-
-	var team models.Team
-	if err := result.Content(&team); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse team"})
 		return
 	}
 
@@ -131,37 +151,34 @@ func (h *Handler) UpdateTeam(c *gin.Context) {
 		return
 	}
 
-	team.Name = req.Name
-	team.Color = req.Color
-	team.Description = req.Description
-	team.LogoURL = req.LogoURL
-
-	_, err = h.collection.Replace("team::"+id, team, &gocb.ReplaceOptions{Cas: result.Cas()})
+	_, err = h.db.Exec(
+		"UPDATE pt_event_teams SET name=$1, description=$2, logo_url=$3, logo_base64=$4, color=$5, updated_at=NOW() WHERE id=$6",
+		req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), id,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update team"})
 		return
 	}
 
-	c.JSON(http.StatusOK, team)
+	updated, _ := h.getTeamByID(id)
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *Handler) DeleteTeam(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("team::"+id, nil)
+	team, err := h.getTeamByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "team not found"})
 		return
 	}
-	var team models.Team
-	result.Content(&team)
 
 	if !h.hasEventRole(callerID.(string), team.EventID, models.EventRoleAdmin) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "event admin access required"})
 		return
 	}
 
-	h.collection.Remove("team::"+id, nil)
+	h.db.Exec("DELETE FROM pt_event_teams WHERE id = $1", id)
 	c.JSON(http.StatusOK, gin.H{"message": "team deleted"})
 }

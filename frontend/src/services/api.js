@@ -66,12 +66,18 @@ export const reviewJoinRequest = (eventId, userId, status) => api.patch(`/events
 // Event settings
 export const updateEventSettings = (eventId, data) => api.patch(`/events/${eventId}/settings`, data)
 
+// Role access
+export const getRoleAccess    = (eventId)       => api.get(`/events/${eventId}/role-access`)
+export const updateRoleAccess = (eventId, data) => api.put(`/events/${eventId}/role-access`, data)
+export const resetRoleAccess  = (eventId)       => api.delete(`/events/${eventId}/role-access`)
+
 // Games
 export const listGames = (eventId) => api.get(`/events/${eventId}/games`)
 export const getGame = (id) => api.get(`/games/${id}`)
 export const createGame = (eventId, data) => api.post(`/events/${eventId}/games`, data)
 export const updateGame = (id, data) => api.put(`/games/${id}`, data)
 export const updateGameStatus = (id, status) => api.patch(`/games/${id}/status`, { status })
+export const cancelGame = (id) => api.patch(`/games/${id}/cancel`)
 export const deleteGame = (id) => api.delete(`/games/${id}`)
 
 // Game participants

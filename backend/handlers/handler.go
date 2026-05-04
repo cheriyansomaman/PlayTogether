@@ -1,53 +1,53 @@
 package handlers
 
 import (
-	"github.com/couchbase/gocb/v2"
+	"database/sql"
+	"encoding/json"
+
 	"github.com/playtogether/backend/models"
 	ws "github.com/playtogether/backend/websocket"
 )
 
 type Handler struct {
-	cluster    *gocb.Cluster
-	collection *gocb.Collection
-	hub        *ws.Hub
-	jwtSecret  string
-	bucket     string
+	db        *sql.DB
+	hub       *ws.Hub
+	jwtSecret string
 }
 
-func New(cluster *gocb.Cluster, collection *gocb.Collection, hub *ws.Hub, jwtSecret, bucket string) *Handler {
-	return &Handler{cluster: cluster, collection: collection, hub: hub, jwtSecret: jwtSecret, bucket: bucket}
+func New(db *sql.DB, hub *ws.Hub, jwtSecret string) *Handler {
+	return &Handler{db: db, hub: hub, jwtSecret: jwtSecret}
 }
 
-func queryOptions(params map[string]interface{}) *gocb.QueryOptions {
-	return &gocb.QueryOptions{NamedParameters: params}
-}
-
-// getEventRole returns the caller's effective role for an event.
-// System admins always get EventRoleAdmin regardless of membership.
-func (h *Handler) getEventRole(userID, eventID string) (models.EventRole, bool) {
-	// System admin → implicit event admin
-	r, err := h.collection.Get("user::"+userID, nil)
-	if err == nil {
-		var u models.User
-		if r.Content(&u) == nil && u.Role == models.RoleAdmin {
-			return models.EventRoleAdmin, true
-		}
+// jsonMarshal marshals v to JSON bytes, returning nil on error.
+func jsonMarshal(v interface{}) []byte {
+	if v == nil {
+		return nil
 	}
+	b, _ := json.Marshal(v)
+	return b
+}
 
-	// Check event-specific membership
-	r, err = h.collection.Get(models.EventMemberKey(eventID, userID), nil)
+// jsonUnmarshal unmarshals src into dst if src is non-nil.
+func jsonUnmarshal(src []byte, dst interface{}) {
+	if src != nil {
+		json.Unmarshal(src, dst)
+	}
+}
+
+// getEventRole returns the caller's role for the given event from pt_event_members.
+func (h *Handler) getEventRole(userID, eventID string) (models.EventRole, bool) {
+	var eventRole models.EventRole
+	err := h.db.QueryRow(
+		"SELECT role FROM pt_event_members WHERE event_id = $1 AND user_id = $2",
+		eventID, userID,
+	).Scan(&eventRole)
 	if err != nil {
 		return "", false
 	}
-	var m models.EventMember
-	if r.Content(&m) != nil {
-		return "", false
-	}
-	return m.Role, true
+	return eventRole, true
 }
 
-// requireEventRole aborts with 403 if the caller doesn't have at least the given role.
-// Role hierarchy: admin > member > viewer
+// hasEventRole checks whether caller has at least the given role in the event.
 func (h *Handler) hasEventRole(userID, eventID string, minimum models.EventRole) bool {
 	role, ok := h.getEventRole(userID, eventID)
 	if !ok {

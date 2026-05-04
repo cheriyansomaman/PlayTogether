@@ -1,20 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getPublicEvent } from '../services/api'
+import { SportIcon, PositionBadge } from '../utils/sportIcons'
+import { MapPin, Clock3, Calendar, Link as LinkIcon, ClipboardList } from 'lucide-react'
 
-const sportEmoji = {
-  athletics: '🏃', swimming: '🏊', cycling: '🚴', football: '⚽', basketball: '🏀',
-  tennis: '🎾', volleyball: '🏐', cricket: '🏏', baseball: '⚾', rugby: '🏉',
-  golf: '⛳', boxing: '🥊', wrestling: '🤼', gymnastics: '🤸', 'multi-sport': '🏆',
-  other: '🎯',
-}
-
-const positionBadge = (pos) => {
-  if (pos === 1) return '🥇'
-  if (pos === 2) return '🥈'
-  if (pos === 3) return '🥉'
-  return `#${pos}`
-}
+const DEFAULT_POINT_SYSTEM = [
+  { rank: 1, rank_name: 'Gold',   points: 3 },
+  { rank: 2, rank_name: 'Silver', points: 2 },
+  { rank: 3, rank_name: 'Bronze', points: 1 },
+]
 
 // ── Aggregation helpers ───────────────────────────────────────────────────────
 function buildTeamLeaderboard(results, teamMap) {
@@ -25,30 +19,56 @@ function buildTeamLeaderboard(results, teamMap) {
       const key = entry.participant_id || entry.participant_name
       if (!scores[key]) {
         const team = teamMap[entry.participant_id] || {}
-        scores[key] = { id: entry.participant_id, name: team.name || entry.participant_name, color: team.color || '#3b82f6', total: 0, wins: 0, games: 0 }
+        scores[key] = { id: entry.participant_id, name: team.name || entry.participant_name, color: team.color || '#3b82f6', total: 0, game_count: 0, rank_counts: {} }
       }
       scores[key].total += entry.score || 0
-      scores[key].games++
-      if (entry.position === 1) scores[key].wins++
+      scores[key].game_count++
+      if (entry.position) {
+        scores[key].rank_counts[entry.position] = (scores[key].rank_counts[entry.position] || 0) + 1
+      }
     }
   }
   return Object.values(scores).sort((a, b) => b.total - a.total)
 }
 
-function buildIndividualLeaderboard(results) {
+function buildIndividualLeaderboard(results, teamMap) {
   const scores = {}
   for (const r of results) {
+    const teamByPos = {}
+    for (const entry of r.entries || []) {
+      if (entry.participant_type === 'team') {
+        const team = teamMap[entry.participant_id]
+        teamByPos[entry.position] = { color: team?.color || null, name: team?.name || entry.participant_name }
+      }
+    }
     for (const entry of r.entries || []) {
       if (entry.participant_type === 'team') continue
       const key = entry.participant_name || entry.participant_id
       if (!key) continue
-      if (!scores[key]) scores[key] = { name: key, total: 0, wins: 0, games: 0 }
+      if (!scores[key]) scores[key] = { name: key, team_color: null, team_name: null, total: 0, game_count: 0, rank_counts: {} }
       scores[key].total += entry.score || 0
-      scores[key].games++
-      if (entry.position === 1) scores[key].wins++
+      scores[key].game_count++
+      if (entry.position) {
+        scores[key].rank_counts[entry.position] = (scores[key].rank_counts[entry.position] || 0) + 1
+        if (!scores[key].team_color && teamByPos[entry.position]?.color) {
+          scores[key].team_color = teamByPos[entry.position].color
+          scores[key].team_name = teamByPos[entry.position].name
+        }
+      }
     }
   }
-  return Object.values(scores).sort((a, b) => b.total - a.total).slice(0, 3)
+  return Object.values(scores).sort((a, b) => b.total - a.total)
+}
+
+function getRankColumns(event) {
+  const ps = event?.point_system
+  if (ps?.length > 0 && ps.some(r => r.rank_name)) return ps
+  return DEFAULT_POINT_SYSTEM
+}
+
+function getRankPositionLabel(i, rankColumns) {
+  const rule = rankColumns.find(r => r.rank === i + 1)
+  return rule?.rank_name || `#${i + 1}`
 }
 
 function getGameResult(results, gameId) {
@@ -62,8 +82,10 @@ function StatusDot({ status }) {
       <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" /> Live
     </span>
   )
-  if (status === 'upcoming') return <span className="text-xs text-slate-400 font-medium">Upcoming</span>
-  return <span className="text-xs text-slate-500 font-medium">Completed</span>
+  if (status === 'scheduled') return <span className="text-xs text-slate-400 font-medium">Scheduled</span>
+  if (status === 'cancelled') return <span className="text-xs text-red-400 font-medium">Cancelled</span>
+  if (status === 'completed') return <span className="text-xs text-slate-500 font-medium">Completed</span>
+  return <span className="text-xs text-slate-400 font-medium capitalize">{status}</span>
 }
 
 function GameCard({ game, result, teamMap }) {
@@ -85,9 +107,9 @@ function GameCard({ game, result, teamMap }) {
         </div>
         <StatusDot status={game.status} />
       </div>
-      {game.venue && <div className="text-xs text-slate-500 mb-1">📍 {game.venue}</div>}
+      {game.venue && <div className="text-xs text-slate-500 mb-1"><MapPin size={12} className="inline mr-1 shrink-0" />{game.venue}</div>}
       {game.scheduled_at && (
-        <div className="text-xs text-slate-500 mb-2">🕐 {new Date(game.scheduled_at).toLocaleString()}</div>
+        <div className="text-xs text-slate-500 mb-2"><Clock3 size={12} className="inline mr-1 shrink-0" />{new Date(game.scheduled_at).toLocaleString()}</div>
       )}
       {entries.length > 0 && (
         <div className="mt-2 space-y-1 border-t border-slate-600 pt-2">
@@ -97,7 +119,7 @@ function GameCard({ game, result, teamMap }) {
               'Participant'
             return (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="w-6 text-center">{positionBadge(entry.position)}</span>
+                <span className="w-6 text-center"><PositionBadge position={entry.position} /></span>
                 <span className="flex-1 text-slate-300 truncate">{name}</span>
                 <span className="font-semibold text-white">{entry.score}</span>
                 {entry.time && <span className="text-slate-500">{entry.time}</span>}
@@ -114,6 +136,14 @@ function GameCard({ game, result, teamMap }) {
       )}
     </div>
   )
+}
+
+function EventLogo({ event, size = 'md' }) {
+  const [err, setErr] = useState(false)
+  const src = event?.logo_base64 || event?.logo_url
+  if (!src || err) return null
+  const cls = size === 'lg' ? 'w-14 h-14 rounded-xl' : size === 'sm' ? 'w-8 h-8 rounded-lg' : 'w-10 h-10 rounded-xl'
+  return <img src={src} alt="event logo" className={`${cls} object-cover shrink-0`} onError={() => setErr(true)} />
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -139,7 +169,6 @@ export default function PublicEvent() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-refresh every 30 s when event is active
   useEffect(() => {
     if (!data?.event) return
     if (data.event.status !== 'active') return
@@ -155,7 +184,7 @@ export default function PublicEvent() {
 
   if (error) return (
     <div className="min-h-screen bg-slate-800 flex flex-col items-center justify-center gap-4 px-4">
-      <div className="text-5xl">🔗</div>
+      <div className="text-slate-400"><LinkIcon size={48} /></div>
       <h1 className="text-xl font-bold text-white">Link Not Found</h1>
       <p className="text-slate-400 text-sm text-center">{error}</p>
       <Link to="/events" className="btn-primary mt-2">Browse Events</Link>
@@ -164,14 +193,18 @@ export default function PublicEvent() {
 
   const { event, games = [], teams = [], results = [] } = data
 
-  const teamMap = Object.fromEntries(teams.map((t) => [t.id, t]))
+  const teamMap        = Object.fromEntries(teams.map((t) => [t.id, t]))
   const liveGames      = games.filter((g) => g.status === 'active')
-  const upcomingGames  = games.filter((g) => g.status === 'scheduled' || g.status === 'upcoming')
+  const upcomingGames  = games.filter((g) => g.status === 'scheduled')
   const completedGames = games.filter((g) => g.status === 'completed')
+  const cancelledGames = games.filter((g) => g.status === 'cancelled')
 
   const teamLeaderboard = buildTeamLeaderboard(results, teamMap)
-  const topIndividuals  = buildIndividualLeaderboard(results)
-  const emoji = sportEmoji[event.event_type] || '🎯'
+  const topIndividuals  = buildIndividualLeaderboard(results, teamMap)
+  const rankColumns     = getRankColumns(event)
+
+  const rankColor = (rank) =>
+    rank === 1 ? 'text-yellow-400' : rank === 2 ? 'text-slate-300' : rank === 3 ? 'text-orange-400' : 'text-slate-400'
 
   return (
     <div className="min-h-screen bg-slate-800">
@@ -179,7 +212,8 @@ export default function PublicEvent() {
       <div className="border-b border-slate-600 bg-slate-700/90 backdrop-blur sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xl shrink-0">{emoji}</span>
+            <EventLogo event={event} size="sm" />
+            {!(event.logo_base64 || event.logo_url) && <span className="shrink-0"><SportIcon sport={event.event_type} size={24} /></span>}
             <span className="font-semibold text-white truncate">{event.name}</span>
             <span className={`badge badge-${event.status} shrink-0`}>{event.status}</span>
           </div>
@@ -199,7 +233,11 @@ export default function PublicEvent() {
         {/* Event header */}
         <div className="card p-6">
           <div className="flex flex-col sm:flex-row gap-6">
-            <div className="text-6xl sm:text-7xl">{emoji}</div>
+            <div className="shrink-0">
+              {event.logo_base64 || event.logo_url
+                ? <EventLogo event={event} size="lg" />
+                : <SportIcon sport={event.event_type} size={56} />}
+            </div>
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className={`badge badge-${event.status}`}>{event.status}</span>
@@ -212,8 +250,8 @@ export default function PublicEvent() {
               <h1 className="text-2xl font-bold text-white mb-1">{event.name}</h1>
               <p className="text-slate-400 text-sm capitalize mb-3">{event.event_type?.replace(/-/g, ' ')}</p>
               <div className="flex flex-wrap gap-4 text-sm text-slate-400">
-                {event.location && <span>📍 {event.location}</span>}
-                <span>📅 {event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</span>
+                {event.location && <span><MapPin size={12} className="inline mr-1 shrink-0" />{event.location}</span>}
+                <span><Calendar size={12} className="inline mr-1 shrink-0" />{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</span>
               </div>
               {event.description && (
                 <p className="text-slate-300 text-sm mt-3 leading-relaxed">{event.description}</p>
@@ -257,19 +295,23 @@ export default function PublicEvent() {
           </section>
         )}
 
-        {/* Team leaderboard + Top 3 individuals */}
+        {/* Leaderboards */}
         {(teamLeaderboard.length > 0 || topIndividuals.length > 0) && (
           <div className="grid lg:grid-cols-2 gap-6">
 
             {teamLeaderboard.length > 0 && (
               <section>
                 <h2 className="text-lg font-semibold text-white mb-4">Team Points Table</h2>
-                <div className="card overflow-hidden">
+                <div className="card overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
                       <tr>
                         <th className="px-4 py-3 text-left">Team</th>
-                        <th className="px-4 py-3 text-center">W</th>
+                        {rankColumns.map((r) => (
+                          <th key={r.rank} className={`px-3 py-3 text-center ${rankColor(r.rank)}`}>
+                            {r.rank_name}
+                          </th>
+                        ))}
                         <th className="px-4 py-3 text-center hidden sm:table-cell">GP</th>
                         <th className="px-4 py-3 text-right">Pts</th>
                       </tr>
@@ -284,8 +326,12 @@ export default function PublicEvent() {
                               <span className="font-medium text-white truncate">{t.name}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-center text-emerald-400 font-semibold">{t.wins}</td>
-                          <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{t.games}</td>
+                          {rankColumns.map((r) => (
+                            <td key={r.rank} className={`px-3 py-3 text-center font-semibold ${rankColor(r.rank)}`}>
+                              {t.rank_counts[r.rank] || 0}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{t.game_count}</td>
                           <td className="px-4 py-3 text-right font-bold text-white">{t.total}</td>
                         </tr>
                       ))}
@@ -297,23 +343,42 @@ export default function PublicEvent() {
 
             {topIndividuals.length > 0 && (
               <section>
-                <h2 className="text-lg font-semibold text-white mb-4">Top Performers</h2>
-                <div className="card divide-y divide-slate-600">
-                  {topIndividuals.map((ind, i) => (
-                    <div key={ind.name} className={`flex items-center gap-4 px-5 py-4 ${i === 0 ? 'bg-amber-500/5' : ''}`}>
-                      <div className="text-2xl w-10 text-center shrink-0">{positionBadge(i + 1)}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-white truncate">{ind.name}</div>
-                        <div className="text-xs text-slate-500">
-                          {ind.wins} win{ind.wins !== 1 ? 's' : ''} · {ind.games} game{ind.games !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-xl font-bold text-white">{ind.total}</div>
-                        <div className="text-xs text-slate-500">pts</div>
-                      </div>
-                    </div>
-                  ))}
+                <h2 className="text-lg font-semibold text-white mb-4">Top 10 performers</h2>
+                <div className="card overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Performer</th>
+                        {rankColumns.map((r) => (
+                          <th key={r.rank} className={`px-3 py-3 text-center ${rankColor(r.rank)}`}>
+                            {r.rank_name}
+                          </th>
+                        ))}
+                        <th className="px-4 py-3 text-center hidden sm:table-cell">GP</th>
+                        <th className="px-4 py-3 text-right">Pts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-600">
+                      {topIndividuals.map((ind, i) => (
+                        <tr key={ind.name} className={`${i === 0 ? 'bg-amber-500/5' : 'hover:bg-slate-600/30'} transition-colors`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                              {ind.team_color && <span className="w-2.5 h-2.5 rounded-full shrink-0 cursor-default" title={ind.team_name || ''} style={{ backgroundColor: ind.team_color }} />}
+                              <span className="font-medium text-white truncate">{ind.name}</span>
+                            </div>
+                          </td>
+                          {rankColumns.map((r) => (
+                            <td key={r.rank} className={`px-3 py-3 text-center font-semibold ${rankColor(r.rank)}`}>
+                              {ind.rank_counts[r.rank] || 0}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{ind.game_count}</td>
+                          <td className="px-4 py-3 text-right font-bold text-white">{ind.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             )}
@@ -344,9 +409,21 @@ export default function PublicEvent() {
           </section>
         )}
 
+        {/* Cancelled games */}
+        {cancelledGames.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-slate-400 mb-4">Cancelled</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cancelledGames.map((g) => (
+                <GameCard key={g.id} game={g} result={null} teamMap={teamMap} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {games.length === 0 && (
           <div className="text-center py-16 text-slate-500">
-            <div className="text-4xl mb-3">📋</div>
+            <div className="mb-3 flex justify-center"><ClipboardList size={40} /></div>
             <p>No games have been added to this event yet.</p>
           </div>
         )}

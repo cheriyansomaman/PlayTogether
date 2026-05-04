@@ -1,12 +1,15 @@
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useWS } from '../context/WSContext'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { Download } from 'lucide-react'
 
 export default function Navbar() {
   const { user, logout, isAdmin } = useAuth()
   const { connected } = useWS()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const { canInstall, install } = useInstallPrompt()
 
   const handleLogout = () => { logout(); navigate('/login') }
 
@@ -64,6 +67,16 @@ export default function Navbar() {
                     )}
                   </div>
                 </NavLink>
+                {canInstall && (
+                  <button
+                    onClick={install}
+                    className="btn-secondary btn-sm flex items-center gap-1.5"
+                    title="Add to Home Screen"
+                  >
+                    <Download size={14} />
+                    <span className="hidden sm:inline">Install</span>
+                  </button>
+                )}
                 <button onClick={handleLogout} className="btn-secondary btn-sm">
                   Sign out
                 </button>

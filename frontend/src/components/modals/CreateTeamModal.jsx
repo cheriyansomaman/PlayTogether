@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { createTeam, updateTeam } from '../../services/api'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
+import { ImageIcon } from 'lucide-react'
 
 const PRESET_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -85,7 +86,7 @@ export default function CreateTeamModal({ eventId, team, onClose, onSave }) {
     name:        team?.name        || '',
     color:       team?.color       || '#3b82f6',
     description: team?.description || '',
-    logo_url:    team?.logo_url    || '',
+    logo_url:    team?.logo_base64 || team?.logo_url || '',
   })
   const [logoMode, setLogoMode]   = useState('upload') // 'upload' | 'url'
   const [uploading, setUploading] = useState(false)
@@ -144,6 +145,10 @@ export default function CreateTeamModal({ eventId, team, onClose, onSave }) {
     setSaving(true)
     try {
       const payload = { ...form }
+      if (payload.logo_url?.startsWith('data:')) {
+        payload.logo_base64 = payload.logo_url
+        delete payload.logo_url
+      }
       if (!payload.logo_url)    delete payload.logo_url
       if (!payload.description) delete payload.description
       const { data } = team
@@ -263,7 +268,7 @@ export default function CreateTeamModal({ eventId, team, onClose, onSave }) {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-slate-400">
-                    <div className="text-3xl">🖼️</div>
+                    <div className="text-slate-400"><ImageIcon size={32} /></div>
                     <p className="text-sm font-medium text-slate-300">Drop image here or click to browse</p>
                     <p className="text-xs">PNG, JPG, WEBP — max 10 MB · resized to 256 × 256</p>
                   </div>

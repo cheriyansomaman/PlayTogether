@@ -7,23 +7,23 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      includeAssets: ['playtogether.png', 'logo.png'],
       manifest: {
         name: 'PlayTogether - Sports Event Manager',
         short_name: 'PlayTogether',
         description: 'Manage sports events and games',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        start_url: '/',
+        scope: '/',
+        theme_color: '#1e293b',
+        background_color: '#0f172a',
         display: 'standalone',
+        orientation: 'portrait',
         icons: [
           {
             src: '/playtogether.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: '/playtogether.png',
-            sizes: '512x512',
-            type: 'image/png'
+            sizes: '1024x1024',
+            type: 'image/png',
+            purpose: 'any maskable'
           }
         ]
       }

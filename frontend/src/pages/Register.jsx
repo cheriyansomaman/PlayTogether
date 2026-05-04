@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Trophy } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { previewUsername as previewUsernameAPI, register } from '../services/api'
@@ -60,7 +61,7 @@ export default function Register() {
     <div className="flex items-center justify-center min-h-[80vh]">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🏆</div>
+          <div className="mb-3 text-white flex justify-center"><Trophy size={48} /></div>
           <h1 className="text-3xl font-bold text-white">PlayTogether</h1>
           <p className="text-slate-400 mt-1">Create your account</p>
         </div>

@@ -10,7 +10,6 @@ import (
 	"github.com/playtogether/backend/database"
 	"github.com/playtogether/backend/handlers"
 	"github.com/playtogether/backend/middleware"
-	"github.com/playtogether/backend/models"
 	ws "github.com/playtogether/backend/websocket"
 )
 
@@ -18,15 +17,14 @@ func main() {
 	cfg := config.Load()
 
 	if err := database.Connect(cfg); err != nil {
-		log.Fatalf("Couchbase connection failed: %v", err)
+		log.Fatalf("PostgreSQL connection failed: %v", err)
 	}
 	defer database.Close()
-	log.Println("Connected to Couchbase")
 
 	hub := ws.NewHub()
 	go hub.Run()
 
-	h := handlers.New(database.Cluster, database.Collection, hub, cfg.JWTSecret, cfg.CouchbaseBucket)
+	h := handlers.New(database.DB, hub, cfg.JWTSecret)
 
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -38,7 +36,6 @@ func main() {
 
 	r.GET("/ws", func(c *gin.Context) { ws.ServeWS(hub, c.Writer, c.Request) })
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
-	// Public share link — no auth
 	r.GET("/api/public/events/:token", h.GetPublicEvent)
 
 	api := r.Group("/api")
@@ -96,6 +93,7 @@ func main() {
 	p.POST("/events/:id/games", h.CreateGame)
 	p.PUT("/games/:id", h.UpdateGame)
 	p.PATCH("/games/:id/status", h.UpdateGameStatus)
+	p.PATCH("/games/:id/cancel", h.CancelGame)
 	p.DELETE("/games/:id", h.DeleteGame)
 
 	// Teams
@@ -110,19 +108,21 @@ func main() {
 	p.PUT("/participants/:id", h.UpdateParticipant)
 	p.DELETE("/participants/:id", h.DeleteParticipant)
 
+	// Role access
+	p.GET("/events/:id/role-access", h.GetEventRoleAccess)
+	p.PUT("/events/:id/role-access", h.UpdateEventRoleAccess)
+	p.DELETE("/events/:id/role-access", h.ResetEventRoleAccess)
+
 	// Results
 	p.POST("/games/:id/result", h.RecordResult)
 	p.PUT("/games/:id/result", h.RecordResult)
 	p.DELETE("/results/:id", h.DeleteResult)
 
-	// System Admin only
-	admin := api.Group("")
-	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret), middleware.RequireRole(models.RoleAdmin))
-	admin.GET("/auth/users", h.ListUsers)
-	admin.POST("/auth/users", h.CreateAdminUser)
-	admin.DELETE("/auth/users/:id", h.DeleteUser)
+	// User management
+	p.GET("/auth/users", h.ListUsers)
+	p.POST("/auth/users", h.CreateAdminUser)
+	p.DELETE("/auth/users/:id", h.DeleteUser)
 
-	// Any authenticated user can create an event; they become its event admin automatically
 	p.POST("/events", h.CreateEvent)
 
 	log.Printf("Server starting on port %s", cfg.Port)

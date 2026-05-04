@@ -1,15 +1,68 @@
 package handlers
 
 import (
-	"fmt"
+	"database/sql"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/couchbase/gocb/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/playtogether/backend/models"
 )
+
+// ── Scan helpers ──────────────────────────────────────────────────────────────
+
+func scanGameRows(rows *sql.Rows) (*models.Game, error) {
+	var g models.Game
+	var description, gameType, venue, createdBy sql.NullString
+	var ageStart, ageEnd sql.NullInt64
+	var scheduledAt sql.NullTime
+	var teamIDsJSON, participantIDsJSON []byte
+
+	err := rows.Scan(
+		&g.ID, &g.EventID, &g.Name, &description,
+		&g.GameMode, &g.AgeRestricted, &ageStart, &ageEnd,
+		&gameType, &g.Status, &scheduledAt, &venue,
+		&teamIDsJSON, &participantIDsJSON, &createdBy,
+		&g.CreatedAt, &g.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	g.Description = description.String
+	g.GameType = gameType.String
+	g.Venue = venue.String
+	g.CreatedBy = createdBy.String
+	g.AgeFrom = int(ageStart.Int64)
+	g.AgeTo = int(ageEnd.Int64)
+	if scheduledAt.Valid {
+		g.ScheduledAt = scheduledAt.Time.Format(time.RFC3339)
+	}
+	jsonUnmarshal(teamIDsJSON, &g.TeamIDs)
+	jsonUnmarshal(participantIDsJSON, &g.ParticipantIDs)
+	return &g, nil
+}
+
+func (h *Handler) getGameByID(id string) (*models.Game, error) {
+	const cols = `id, event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
+		game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, created_at, updated_at`
+
+	rows, err := h.db.Query("SELECT "+cols+" FROM pt_event_games WHERE id = $1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, sql.ErrNoRows
+	}
+	return scanGameRows(rows)
+}
+
+const gameSelectCols = `id, event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
+	game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, created_at, updated_at`
+
+// ── Request types ─────────────────────────────────────────────────────────────
 
 type CreateGameRequest struct {
 	Name           string   `json:"name" binding:"required"`
@@ -25,27 +78,28 @@ type CreateGameRequest struct {
 	ParticipantIDs []string `json:"participant_ids"`
 }
 
+// ── Handlers ──────────────────────────────────────────────────────────────────
+
 func (h *Handler) ListGames(c *gin.Context) {
 	eventID := c.Param("id")
-	query := fmt.Sprintf(`SELECT g.* FROM `+"`"+`%s`+"`"+` AS g WHERE g.event_id = $event_id AND g.type = 'game' ORDER BY g.scheduled_at ASC`, h.bucket)
-	rows, err := h.cluster.Query(query, queryOptions(map[string]interface{}{"event_id": eventID}))
+
+	rows, err := h.db.Query(
+		"SELECT "+gameSelectCols+" FROM pt_event_games WHERE event_id = $1 ORDER BY scheduled_at ASC NULLS LAST",
+		eventID,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})
 		return
 	}
 	defer rows.Close()
 
-	var games []models.Game
+	games := []models.Game{}
 	for rows.Next() {
-		var g models.Game
-		if err := rows.Row(&g); err != nil {
+		g, err := scanGameRows(rows)
+		if err != nil {
 			continue
 		}
-		games = append(games, g)
-	}
-
-	if games == nil {
-		games = []models.Game{}
+		games = append(games, *g)
 	}
 	c.JSON(http.StatusOK, games)
 }
@@ -59,7 +113,9 @@ func (h *Handler) CreateGame(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.collection.Get("event::"+eventID, nil); err != nil {
+	var exists bool
+	h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM pt_events WHERE id = $1)", eventID).Scan(&exists)
+	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
 		return
 	}
@@ -70,59 +126,48 @@ func (h *Handler) CreateGame(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	now := time.Now().UTC()
-
 	gameMode := req.GameMode
 	if gameMode != "team" {
 		gameMode = "individual"
 	}
 
-	game := models.Game{
-		ID:             uuid.New().String(),
-		Type:           "game",
-		EventID:        eventID,
-		Name:           req.Name,
-		Description:    req.Description,
-		GameType:       req.GameType,
-		GameMode:       gameMode,
-		ScheduledAt:    req.ScheduledAt,
-		Venue:          req.Venue,
-		AgeRestricted:  req.AgeRestricted,
-		AgeFrom:        req.AgeFrom,
-		AgeTo:          req.AgeTo,
-		TeamIDs:        req.TeamIDs,
-		ParticipantIDs: req.ParticipantIDs,
-		Status:         models.GameStatusScheduled,
-		CreatedBy:      userID.(string),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+	var scheduledAt interface{}
+	if req.ScheduledAt != "" {
+		scheduledAt = req.ScheduledAt
 	}
 
-	_, err := h.collection.Insert("game::"+game.ID, game, nil)
+	var id string
+	err := h.db.QueryRow(
+		`INSERT INTO pt_event_games (event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
+		  game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', $9, $10, $11, $12, $13) RETURNING id`,
+		eventID, req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
+		nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
+		nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
+		jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), callerID.(string),
+	).Scan(&id)
 	if err != nil {
+		log.Printf("create game error: %v", err)
+		if strings.Contains(err.Error(), "idx_pt_event_games_event_name_age") {
+			c.JSON(http.StatusConflict, gin.H{"error": "a game with this name and age range already exists in this event"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create game"})
 		return
 	}
 
+	game, _ := h.getGameByID(id)
 	h.hub.Broadcast(models.WSMessage{Type: "game_created", EventID: eventID, Data: game})
 	c.JSON(http.StatusCreated, game)
 }
 
 func (h *Handler) GetGame(c *gin.Context) {
 	id := c.Param("id")
-	result, err := h.collection.Get("game::"+id, nil)
+	game, err := h.getGameByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
 		return
 	}
-
-	var game models.Game
-	if err := result.Content(&game); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse game"})
-		return
-	}
-
 	c.JSON(http.StatusOK, game)
 }
 
@@ -130,15 +175,9 @@ func (h *Handler) UpdateGame(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("game::"+id, nil)
+	game, err := h.getGameByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
-		return
-	}
-
-	var game models.Game
-	if err := result.Content(&game); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse game"})
 		return
 	}
 
@@ -158,42 +197,37 @@ func (h *Handler) UpdateGame(c *gin.Context) {
 		gameMode = "individual"
 	}
 
-	game.Name = req.Name
-	game.Description = req.Description
-	game.GameType = req.GameType
-	game.GameMode = gameMode
-	game.ScheduledAt = req.ScheduledAt
-	game.Venue = req.Venue
-	game.AgeRestricted = req.AgeRestricted
-	game.AgeFrom = req.AgeFrom
-	game.AgeTo = req.AgeTo
-	game.TeamIDs = req.TeamIDs
-	game.ParticipantIDs = req.ParticipantIDs
-	game.UpdatedAt = time.Now().UTC()
+	var scheduledAt interface{}
+	if req.ScheduledAt != "" {
+		scheduledAt = req.ScheduledAt
+	}
 
-	_, err = h.collection.Replace("game::"+id, game, &gocb.ReplaceOptions{Cas: result.Cas()})
+	_, err = h.db.Exec(
+		`UPDATE pt_event_games SET name=$1, description=$2, individual_or_team=$3, age_restriction=$4, age_start=$5, age_end=$6,
+		  game_type=$7, scheduled_at=$8, venue=$9, team_ids=$10, participant_ids=$11, updated_at=NOW()
+		 WHERE id=$12`,
+		req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
+		nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
+		nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
+		jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), id,
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update game"})
 		return
 	}
 
-	h.hub.Broadcast(models.WSMessage{Type: "game_updated", EventID: game.EventID, GameID: id, Data: game})
-	c.JSON(http.StatusOK, game)
+	updated, _ := h.getGameByID(id)
+	h.hub.Broadcast(models.WSMessage{Type: "game_updated", EventID: game.EventID, GameID: id, Data: updated})
+	c.JSON(http.StatusOK, updated)
 }
 
 func (h *Handler) UpdateGameStatus(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("game::"+id, nil)
+	game, err := h.getGameByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
-		return
-	}
-
-	var game models.Game
-	if err := result.Content(&game); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse game"})
 		return
 	}
 
@@ -210,36 +244,73 @@ func (h *Handler) UpdateGameStatus(c *gin.Context) {
 		return
 	}
 
-	game.Status = req.Status
-	game.UpdatedAt = time.Now().UTC()
+	h.db.Exec("UPDATE pt_event_games SET status=$1, updated_at=NOW() WHERE id=$2", string(req.Status), id)
 
-	_, err = h.collection.Replace("game::"+id, game, &gocb.ReplaceOptions{Cas: result.Cas()})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update game"})
-		return
-	}
-
-	h.hub.Broadcast(models.WSMessage{Type: "game_status_changed", EventID: game.EventID, GameID: id, Data: game})
-	c.JSON(http.StatusOK, game)
+	updated, _ := h.getGameByID(id)
+	h.hub.Broadcast(models.WSMessage{Type: "game_status_changed", EventID: game.EventID, GameID: id, Data: updated})
+	c.JSON(http.StatusOK, updated)
 }
 
-func (h *Handler) DeleteGame(c *gin.Context) {
+func (h *Handler) CancelGame(c *gin.Context) {
 	id := c.Param("id")
 	callerID, _ := c.Get("user_id")
 
-	result, err := h.collection.Get("game::"+id, nil)
+	game, err := h.getGameByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
 		return
 	}
-	var game models.Game
-	result.Content(&game)
 
 	if !h.hasEventRole(callerID.(string), game.EventID, models.EventRoleAdmin) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "event admin access required"})
 		return
 	}
 
-	h.collection.Remove("game::"+id, nil)
+	if game.Status == models.GameStatusCancelled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "game is already cancelled"})
+		return
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec("UPDATE pt_event_games SET status='cancelled', updated_at=NOW() WHERE id=$1", id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
+		return
+	}
+	if _, err = tx.Exec("DELETE FROM pt_event_results WHERE game_id=$1", id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove results"})
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
+		return
+	}
+
+	updated, _ := h.getGameByID(id)
+	h.hub.Broadcast(models.WSMessage{Type: "game_cancelled", EventID: game.EventID, GameID: id, Data: updated})
+	c.JSON(http.StatusOK, updated)
+}
+
+func (h *Handler) DeleteGame(c *gin.Context) {
+	id := c.Param("id")
+	callerID, _ := c.Get("user_id")
+
+	game, err := h.getGameByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
+		return
+	}
+
+	if !h.hasEventRole(callerID.(string), game.EventID, models.EventRoleAdmin) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "event admin access required"})
+		return
+	}
+
+	h.db.Exec("DELETE FROM pt_event_games WHERE id = $1", id)
 	c.JSON(http.StatusOK, gin.H{"message": "game deleted"})
 }
