@@ -13,9 +13,10 @@ CREATE TABLE pt_users
     address       TEXT,
     email         VARCHAR(256),
     phone         VARCHAR(32),
-    tags          TEXT,
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    tags              TEXT,
+    profile_picture   TEXT,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_pt_users_username ON pt_users (username);

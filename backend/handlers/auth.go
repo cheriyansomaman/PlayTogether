@@ -18,7 +18,7 @@ import (
 
 func applyUserNulls(u *models.User,
 	id, username, firstName, lastName, passwordHash,
-	address sql.NullString,
+	address, profilePicture sql.NullString,
 	age sql.NullInt64,
 	createdAt sql.NullTime,
 ) {
@@ -29,6 +29,7 @@ func applyUserNulls(u *models.User,
 	u.PasswordHash = passwordHash.String
 	u.Age = int(age.Int64)
 	u.Address = address.String
+	u.ProfilePicture = profilePicture.String
 	u.CreatedAt = createdAt.Time
 	u.Name = strings.TrimSpace(u.FirstName + " " + u.LastName)
 }
@@ -36,43 +37,49 @@ func applyUserNulls(u *models.User,
 func scanUserRow(row *sql.Row) (*models.User, error) {
 	var u models.User
 	var id, username, firstName, lastName, passwordHash,
-		address sql.NullString
+		address, profilePicture sql.NullString
 	var age sql.NullInt64
 	var createdAt sql.NullTime
 	err := row.Scan(
 		&id, &username, &firstName, &lastName, &passwordHash,
-		&age, &address, &createdAt,
+		&age, &address, &profilePicture, &createdAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	applyUserNulls(&u, id, username, firstName, lastName, passwordHash,
-		address, age, createdAt)
+		address, profilePicture, age, createdAt)
 	return &u, nil
 }
 
 func scanUserRows(rows *sql.Rows) (*models.User, error) {
 	var u models.User
 	var id, username, firstName, lastName, passwordHash,
-		address, email, phone, tags sql.NullString
+		address, email, phone, tags, profilePicture sql.NullString
 	var age sql.NullInt64
 	var createdAt sql.NullTime
 	err := rows.Scan(
 		&id, &username, &firstName, &lastName, &passwordHash,
-		&age, &address, &email, &phone, &tags, &createdAt,
+		&age, &address, &email, &phone, &tags, &profilePicture, &createdAt,
 	)
 	if err != nil {
 		return nil, err
 	}
 	applyUserNulls(&u, id, username, firstName, lastName, passwordHash,
-		address, age, createdAt)
+		address, profilePicture, age, createdAt)
+	u.Email = email.String
+	u.Phone = phone.String
+	u.Tags = tags.String
 	return &u, nil
 }
 
 // id::text forces pq to receive the UUID as a plain text string, avoiding
 // the "unsupported Scan, storing driver.Value type []byte into type *string" error
 // that occurs when pq returns UUID columns in binary format.
-const userSelectCols = `id::text as id, username, first_name, last_name, password_hash, age, address, created_at`
+const userSelectCols = `id::text as id, username, first_name, last_name, password_hash, age, address, profile_picture, created_at`
+
+// userFullCols is used for admin list — includes email, phone, tags.
+const userFullCols = `id::text as id, username, first_name, last_name, password_hash, age, address, email, phone, tags, profile_picture, created_at`
 
 // insertUser inserts a new user and returns the full row via RETURNING.
 func (h *Handler) insertUser(username, firstName, lastName, passwordHash string) (*models.User, error) {
@@ -397,7 +404,7 @@ func (h *Handler) CreateAdminUser(c *gin.Context) {
 }
 
 func (h *Handler) ListUsers(c *gin.Context) {
-	rows, err := h.db.Query("SELECT " + userSelectCols + " FROM pt_users ORDER BY created_at DESC")
+	rows, err := h.db.Query("SELECT " + userFullCols + " FROM pt_users ORDER BY created_at DESC")
 	if err != nil {
 		log.Printf("list users error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -445,6 +452,122 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
+}
+
+type ProfilePictureRequest struct {
+	ProfilePicture string `json:"profile_picture" binding:"required"`
+}
+
+func (h *Handler) UpdateProfilePicture(c *gin.Context) {
+	callerID, _ := c.Get("user_id")
+	var req ProfilePictureRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.db.Exec(
+		"UPDATE pt_users SET profile_picture = $1, updated_at = NOW() WHERE id::text = $2",
+		req.ProfilePicture, callerID.(string),
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile picture"})
+		return
+	}
+	user, err := h.getUserByID(callerID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
+}
+
+func (h *Handler) RemoveProfilePicture(c *gin.Context) {
+	callerID, _ := c.Get("user_id")
+	if _, err := h.db.Exec(
+		"UPDATE pt_users SET profile_picture = NULL, updated_at = NOW() WHERE id::text = $1",
+		callerID.(string),
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove profile picture"})
+		return
+	}
+	user, err := h.getUserByID(callerID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
+}
+
+func (h *Handler) UpdateUserProfilePicture(c *gin.Context) {
+	targetID := c.Param("id")
+	var req ProfilePictureRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.db.Exec(
+		"UPDATE pt_users SET profile_picture = $1, updated_at = NOW() WHERE id::text = $2",
+		req.ProfilePicture, targetID,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile picture"})
+		return
+	}
+	user, err := h.getUserByID(targetID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
+}
+
+func (h *Handler) RemoveUserProfilePicture(c *gin.Context) {
+	targetID := c.Param("id")
+	if _, err := h.db.Exec(
+		"UPDATE pt_users SET profile_picture = NULL, updated_at = NOW() WHERE id::text = $1",
+		targetID,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove profile picture"})
+		return
+	}
+	user, err := h.getUserByID(targetID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
+}
+
+type UpdateUserRequest struct {
+	FirstName string `json:"first_name" binding:"required"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Age       int    `json:"age"`
+	Address   string `json:"address"`
+	Phone     string `json:"phone"`
+	Tags      string `json:"tags"`
+}
+
+func (h *Handler) UpdateUser(c *gin.Context) {
+	targetID := c.Param("id")
+	var req UpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.db.Exec(
+		`UPDATE pt_users SET first_name=$1, last_name=$2, email=$3, age=$4, address=$5, phone=$6, tags=$7, updated_at=NOW() WHERE id::text=$8`,
+		req.FirstName, nullableStr(req.LastName), nullableStr(req.Email),
+		nullableInt(req.Age), nullableStr(req.Address), nullableStr(req.Phone), nullableStr(req.Tags),
+		targetID,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+		return
+	}
+	user, err := h.getUserByID(targetID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
 }
 
 func generateToken(user models.User, secret string) (string, error) {

@@ -23,6 +23,7 @@ func computeMemberAliases(m *models.EventMember) {
 const memberQuery = `
 SELECT em.id, em.event_id, em.user_id, em.role, em.team_id, em.added_by, em.joined_at,
        u.first_name, u.last_name, u.username, u.email, u.age, u.address, u.phone, u.tags,
+       u.profile_picture,
        t.name AS team_name
 FROM pt_event_members em
 JOIN pt_users u ON em.user_id = u.id
@@ -30,13 +31,13 @@ LEFT JOIN pt_event_teams t ON em.team_id = t.id`
 
 func scanMemberRow(row *sql.Row) (*models.EventMember, error) {
 	var m models.EventMember
-	var teamID, addedBy, email, address, phone, tags, teamName sql.NullString
+	var teamID, addedBy, email, address, phone, tags, profilePicture, teamName sql.NullString
 	var age sql.NullInt64
 
 	err := row.Scan(
 		&m.ID, &m.EventID, &m.UserID, &m.Role, &teamID, &addedBy, &m.JoinedAt,
 		&m.FirstName, &m.LastName, &m.Username, &email, &age, &address, &phone, &tags,
-		&teamName,
+		&profilePicture, &teamName,
 	)
 	if err != nil {
 		return nil, err
@@ -49,19 +50,20 @@ func scanMemberRow(row *sql.Row) (*models.EventMember, error) {
 	m.Address = address.String
 	m.Phone = phone.String
 	m.Tags = tags.String
+	m.ProfilePicture = profilePicture.String
 	computeMemberAliases(&m)
 	return &m, nil
 }
 
 func scanMemberRows(rows *sql.Rows) (*models.EventMember, error) {
 	var m models.EventMember
-	var teamID, addedBy, email, address, phone, tags, teamName sql.NullString
+	var teamID, addedBy, email, address, phone, tags, profilePicture, teamName sql.NullString
 	var age sql.NullInt64
 
 	err := rows.Scan(
 		&m.ID, &m.EventID, &m.UserID, &m.Role, &teamID, &addedBy, &m.JoinedAt,
 		&m.FirstName, &m.LastName, &m.Username, &email, &age, &address, &phone, &tags,
-		&teamName,
+		&profilePicture, &teamName,
 	)
 	if err != nil {
 		return nil, err
@@ -74,6 +76,7 @@ func scanMemberRows(rows *sql.Rows) (*models.EventMember, error) {
 	m.Address = address.String
 	m.Phone = phone.String
 	m.Tags = tags.String
+	m.ProfilePicture = profilePicture.String
 	computeMemberAliases(&m)
 	return &m, nil
 }

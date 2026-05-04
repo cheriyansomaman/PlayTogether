@@ -121,7 +121,14 @@ func main() {
 	// User management
 	p.GET("/auth/users", h.ListUsers)
 	p.POST("/auth/users", h.CreateAdminUser)
+	p.PUT("/auth/users/:id", h.UpdateUser)
 	p.DELETE("/auth/users/:id", h.DeleteUser)
+
+	// Profile picture
+	p.PUT("/auth/me/profile-picture", h.UpdateProfilePicture)
+	p.DELETE("/auth/me/profile-picture", h.RemoveProfilePicture)
+	p.PUT("/auth/users/:id/profile-picture", h.UpdateUserProfilePicture)
+	p.DELETE("/auth/users/:id/profile-picture", h.RemoveUserProfilePicture)
 
 	p.POST("/events", h.CreateEvent)
 

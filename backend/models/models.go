@@ -3,38 +3,47 @@ package models
 import "time"
 
 type User struct {
-	ID           string    `json:"id"`
-	FirstName    string    `json:"first_name,omitempty"`
-	LastName     string    `json:"last_name,omitempty"`
-	Name         string    `json:"name"`
-	Username     string    `json:"username,omitempty"`
-	PasswordHash string    `json:"password_hash,omitempty"`
-	Age          int       `json:"age,omitempty"`
-	Address      string    `json:"address,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	FirstName      string    `json:"first_name,omitempty"`
+	LastName       string    `json:"last_name,omitempty"`
+	Name           string    `json:"name"`
+	Username       string    `json:"username,omitempty"`
+	PasswordHash   string    `json:"password_hash,omitempty"`
+	Age            int       `json:"age,omitempty"`
+	Address        string    `json:"address,omitempty"`
+	Email          string    `json:"email,omitempty"`
+	Phone          string    `json:"phone,omitempty"`
+	Tags           string    `json:"tags,omitempty"`
+	ProfilePicture string    `json:"profile_picture,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type UserResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email,omitempty"`
-	Name      string    `json:"name"`
-	FirstName string    `json:"first_name,omitempty"`
-	LastName  string    `json:"last_name,omitempty"`
-	Username  string    `json:"username,omitempty"`
-	Age       int       `json:"age,omitempty"`
-	Address   string    `json:"address,omitempty"`
-	Phone     string    `json:"phone,omitempty"`
-	Tags      string    `json:"tags,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Email          string    `json:"email,omitempty"`
+	Name           string    `json:"name"`
+	FirstName      string    `json:"first_name,omitempty"`
+	LastName       string    `json:"last_name,omitempty"`
+	Username       string    `json:"username,omitempty"`
+	Age            int       `json:"age,omitempty"`
+	Address        string    `json:"address,omitempty"`
+	Phone          string    `json:"phone,omitempty"`
+	Tags           string    `json:"tags,omitempty"`
+	Role           string    `json:"role,omitempty"`
+	ProfilePicture string    `json:"profile_picture,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func (u *User) ToResponse() UserResponse {
 	return UserResponse{
 		ID:        u.ID,
+		Name:      u.Name,
 		FirstName: u.FirstName, LastName: u.LastName, Username: u.Username,
 		Age: u.Age, Address: u.Address,
-		CreatedAt: u.CreatedAt,
+		Email: u.Email, Phone: u.Phone, Tags: u.Tags,
+		ProfilePicture: u.ProfilePicture,
+		CreatedAt:      u.CreatedAt,
 	}
 }
 
@@ -60,14 +69,15 @@ type EventMember struct {
 	AddedBy  string    `json:"added_by,omitempty"`
 	JoinedAt time.Time `json:"joined_at"`
 	// From pt_users
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
-	Username  string `json:"username,omitempty"`
-	Email     string `json:"email,omitempty"`
-	Age       int    `json:"age,omitempty"`
-	Address   string `json:"address,omitempty"`
-	Phone     string `json:"phone,omitempty"`
-	Tags      string `json:"tags,omitempty"`
+	FirstName      string `json:"first_name,omitempty"`
+	LastName       string `json:"last_name,omitempty"`
+	Username       string `json:"username,omitempty"`
+	Email          string `json:"email,omitempty"`
+	Age            int    `json:"age,omitempty"`
+	Address        string `json:"address,omitempty"`
+	Phone          string `json:"phone,omitempty"`
+	Tags           string `json:"tags,omitempty"`
+	ProfilePicture string `json:"profile_picture,omitempty"`
 	// Computed aliases used by the frontend
 	UserName  string    `json:"user_name,omitempty"`
 	UserEmail string    `json:"user_email,omitempty"`

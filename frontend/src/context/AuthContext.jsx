@@ -14,7 +14,7 @@ export function AuthProvider({ children }) {
     if (!token) { setLoading(false); return }
     getMe()
       .then((res) => setUser(res.data))
-      .catch(() => { localStorage.removeItem('token'); localStorage.removeItem('user') })
+      .catch(() => { localStorage.removeItem('token'); localStorage.removeItem('user'); setUser(null) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -30,11 +30,19 @@ export function AuthProvider({ children }) {
     setUser(null)
   }, [])
 
+  const updateUser = useCallback((updates) => {
+    setUser((prev) => {
+      const updated = { ...prev, ...updates }
+      localStorage.setItem('user', JSON.stringify(updated))
+      return updated
+    })
+  }, [])
+
   const isAdmin = user?.role === 'admin'
   const isMember = user?.role === 'member' || user?.role === 'admin'
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, isMember }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, isAdmin, isMember }}>
       {children}
     </AuthContext.Provider>
   )

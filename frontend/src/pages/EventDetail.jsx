@@ -1577,17 +1577,28 @@ export default function EventDetail() {
                     return (
                       <tr key={m.user_id} className="hover:bg-slate-600/30 transition-colors">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-white">{m.user_name}</div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {m.username ? `@${m.username}` : m.user_email}
-                          </div>
-                          {m.tags && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {m.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
-                                <span key={t} className="text-xs text-blue-400">#{t}</span>
-                              ))}
+                          <div className="flex items-center gap-2.5">
+                            {m.profile_picture ? (
+                              <img src={m.profile_picture} alt={m.user_name} className="w-8 h-8 rounded-full object-cover shrink-0" style={{ border: '1.5px solid rgba(0,149,255,0.25)' }} />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'rgba(0,149,255,0.12)', color: '#33aaff' }}>
+                                {m.user_name?.[0]?.toUpperCase() ?? '?'}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-medium text-white">{m.user_name}</div>
+                              <div className="text-xs text-slate-500 font-mono">
+                                {m.username ? `@${m.username}` : m.user_email}
+                              </div>
+                              {m.tags && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {m.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
+                                    <span key={t} className="text-xs text-blue-400">#{t}</span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell text-xs text-slate-400 space-y-0.5">
                           {m.age > 0 && <div>Age: {m.age}</div>}
@@ -1816,11 +1827,21 @@ export default function EventDetail() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-600">
-                      {topPerformers.map((ind, i) => (
+                      {topPerformers.map((ind, i) => {
+                        const picMember = members.find((m) => m.user_name === ind.name)
+                        const picSrc = picMember?.profile_picture
+                        return (
                         <tr key={ind.name} className={`hover:bg-slate-600/30 transition-colors ${i === 0 ? 'bg-amber-500/5' : ''}`}>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                              {picSrc ? (
+                                <img src={picSrc} alt={ind.name} className="w-6 h-6 rounded-full object-cover shrink-0" style={{ border: '1.5px solid rgba(0,149,255,0.25)' }} />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'rgba(0,149,255,0.12)', color: '#33aaff' }}>
+                                  {ind.name?.[0]?.toUpperCase() ?? '?'}
+                                </div>
+                              )}
                               {ind.team_color && <span className="w-2.5 h-2.5 rounded-full shrink-0 cursor-default" title={ind.team_name || ''} style={{ backgroundColor: ind.team_color }} />}
                               <span className="font-medium text-white truncate">{ind.name}</span>
                             </div>
@@ -1833,7 +1854,7 @@ export default function EventDetail() {
                           <td className="px-4 py-3 text-center text-slate-400 hidden sm:table-cell">{ind.game_count}</td>
                           <td className="px-4 py-3 text-right font-bold text-white">{ind.total_score}</td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
