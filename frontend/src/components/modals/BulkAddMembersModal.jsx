@@ -336,7 +336,7 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
 
             {/* Dynamic form */}
             <form onSubmit={handleFormSubmit} className="space-y-2" noValidate>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {templateFields.map((field) => (
                   <div key={field.id} className={isMultiline(field) ? 'col-span-2' : ''}>
                     <label className="text-xs text-slate-400 mb-0.5 block">
@@ -530,7 +530,7 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                   <div>
                     <label className="label">Default Role</label>
                     <select className="input" value={defaultRole} onChange={(e) => setDefaultRole(e.target.value)}>
@@ -648,7 +648,7 @@ export default function BulkAddMembersModal({ eventId, templateFields: propField
             {/* ── Results step ── */}
             {csvStep === 'results' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="card p-4 text-center border-emerald-500/30">
                     <div className="text-3xl font-bold text-emerald-400">{results.filter((r) => r.success).length}</div>
                     <div className="text-xs text-slate-400 mt-1">Added</div>

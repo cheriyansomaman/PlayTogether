@@ -34,12 +34,13 @@ func (h *Handler) GenerateShareLink(c *gin.Context) {
 
 	// Generate new token
 	var token string
-	err = h.db.QueryRow(
-		`UPDATE pt_events SET share_token = gen_random_uuid()::text, updated_at = NOW()
-		 WHERE id = $1 RETURNING share_token`,
-		eventID,
-	).Scan(&token)
-	if err != nil {
+	if err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		return tx.QueryRow(
+			`UPDATE pt_events SET share_token = gen_random_uuid()::text, updated_at = NOW()
+			 WHERE id = $1 RETURNING share_token`,
+			eventID,
+		).Scan(&token)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate share link"})
 		return
 	}
@@ -57,15 +58,19 @@ func (h *Handler) RevokeShareLink(c *gin.Context) {
 		return
 	}
 
-	res, err := h.db.Exec(
-		"UPDATE pt_events SET share_token = NULL, updated_at = NOW() WHERE id = $1",
-		eventID,
-	)
-	if err != nil {
+	var rowsAffected int64
+	if err := h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		res, err := tx.Exec("UPDATE pt_events SET share_token = NULL, updated_at = NOW() WHERE id = $1", eventID)
+		if err != nil {
+			return err
+		}
+		rowsAffected, _ = res.RowsAffected()
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to revoke share link"})
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
 		return
 	}

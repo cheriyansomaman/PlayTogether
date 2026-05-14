@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { deleteMe, updateProfilePicture, removeProfilePicture } from '../services/api'
+import { deleteMe, updateProfilePicture, removeProfilePicture, changeMyPassword } from '../services/api'
 import ConfirmModal from '../components/modals/ConfirmModal'
+import PasswordInput from '../components/PasswordInput'
 import { ImageIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -40,7 +41,24 @@ export default function Profile() {
   const [deleting, setDeleting]     = useState(false)
   const [uploading, setUploading]   = useState(false)
   const [removing, setRemoving]     = useState(false)
+  const [pwForm, setPwForm]         = useState({ current: '', next: '', confirm: '' })
+  const [pwSaving, setPwSaving]     = useState(false)
   const fileInputRef = useRef(null)
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault()
+    if (pwForm.next !== pwForm.confirm) { toast.error('New passwords do not match'); return }
+    setPwSaving(true)
+    try {
+      await changeMyPassword({ current_password: pwForm.current, new_password: pwForm.next })
+      toast.success('Password updated')
+      setPwForm({ current: '', next: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update password')
+    } finally {
+      setPwSaving(false)
+    }
+  }
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -162,6 +180,38 @@ export default function Profile() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="card p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-white">Change Password</h2>
+        <form onSubmit={handleChangePassword} className="space-y-3">
+          <div>
+            <label className="label">Current Password</label>
+            <PasswordInput className="input" value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} required placeholder="Enter current password" />
+          </div>
+          <div>
+            <label className="label">New Password</label>
+            <PasswordInput className="input" value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} required minLength={6} placeholder="Min. 6 characters" />
+          </div>
+          <div>
+            <label className="label">Confirm New Password</label>
+            <PasswordInput
+              className={`input ${pwForm.confirm && pwForm.next !== pwForm.confirm ? 'border-red-500 focus:ring-red-500/30' : ''}`}
+              value={pwForm.confirm}
+              onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+              required minLength={6}
+              placeholder="Repeat new password"
+            />
+            {pwForm.confirm && pwForm.next !== pwForm.confirm && (
+              <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" className="btn-primary" disabled={pwSaving || !pwForm.current || !pwForm.next || pwForm.next !== pwForm.confirm}>
+              {pwSaving ? 'Saving…' : 'Update Password'}
+            </button>
+          </div>
+        </form>
       </div>
 
       <div className="card p-6">

@@ -11,8 +11,8 @@ func (h *Handler) GetEventRoleAccess(c *gin.Context) {
 	eventID := c.Param("id")
 	userID, _ := c.Get("user_id")
 
-	if !h.hasEventRole(userID.(string), eventID, models.EventRoleAdmin) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "event admin access required"})
+	if !h.hasEventRole(userID.(string), eventID, models.EventRoleViewer) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "event member access required"})
 		return
 	}
 

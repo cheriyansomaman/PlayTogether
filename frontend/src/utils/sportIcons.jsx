@@ -37,3 +37,12 @@ export function PositionBadge({ position, className = '' }) {
   const color = colors[position] || 'text-slate-400'
   return <span className={`font-bold ${color} ${className}`}>#{position}</span>
 }
+
+export function ageLabel(from, to) {
+  const hasFrom = from != null && from !== 0 && from !== ''
+  const hasTo   = to   != null && to   !== 0 && to   !== ''
+  if (hasFrom && hasTo) return `Age ${from}–${to}`
+  if (hasFrom)          return `Age below ${from}`
+  if (hasTo)            return `Age above ${to}`
+  return ''
+}

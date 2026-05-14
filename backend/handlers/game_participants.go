@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 
@@ -78,37 +79,17 @@ func (h *Handler) CreateGameParticipant(c *gin.Context) {
 	}
 
 	var id string
-	err = h.db.QueryRow(
-		`INSERT INTO pt_event_game_participants (event_id, game_id, team_id, name, email, age, sport, bib_number, nationality, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		game.EventID, gameID, req.TeamID, req.Name, nullableStr(req.Email),
-		nullableInt(req.Age), nullableStr(req.Sport), nullableStr(req.BibNumber), nullableStr(req.Nationality),
-		callerID.(string),
-	).Scan(&id)
-	if err != nil {
+	if err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		return tx.QueryRow(
+			`INSERT INTO pt_event_game_participants (event_id, game_id, team_id, name, email, age, sport, bib_number, nationality, created_by)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+			game.EventID, gameID, req.TeamID, req.Name, nullableStr(req.Email),
+			nullableInt(req.Age), nullableStr(req.Sport), nullableStr(req.BibNumber), nullableStr(req.Nationality),
+			callerID.(string),
+		).Scan(&id)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add participant"})
 		return
-	}
-
-	// Sync team back to the event member record — by user_id (preferred) or email.
-	if req.TeamID != "" {
-		if req.UserID != "" {
-			h.db.Exec(
-				`UPDATE pt_event_members SET team_id = $1, updated_at = NOW()
-				 WHERE event_id = $2 AND user_id = $3`,
-				req.TeamID, game.EventID, req.UserID,
-			)
-		} else if req.Email != "" {
-			h.db.Exec(
-				`UPDATE pt_event_members em
-				 SET team_id = $1, updated_at = NOW()
-				 FROM pt_users u
-				 WHERE em.event_id = $2
-				   AND em.user_id = u.id
-				   AND u.email = $3`,
-				req.TeamID, game.EventID, req.Email,
-			)
-		}
 	}
 
 	participant, _ := h.getParticipantByID(id)

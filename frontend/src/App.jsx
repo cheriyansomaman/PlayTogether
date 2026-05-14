@@ -10,6 +10,7 @@ import Events from './pages/Events'
 import EventDetail from './pages/EventDetail'
 import GameDetail from './pages/GameDetail'
 import AdminUsers from './pages/AdminUsers'
+import AuditLog from './pages/AuditLog'
 import Profile from './pages/Profile'
 import PublicEvent from './pages/PublicEvent'
 
@@ -21,7 +22,7 @@ function AppRoutes() {
 
       {/* All other routes — wrapped with Navbar */}
       <Route path="*" element={
-        <div className="min-h-screen bg-slate-800">
+        <div className="min-h-screen">
           <Navbar />
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <Routes>
@@ -32,6 +33,7 @@ function AppRoutes() {
               <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
               <Route path="/games/:id" element={<ProtectedRoute><GameDetail /></ProtectedRoute>} />
               <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
+              <Route path="/admin/audit" element={<ProtectedRoute adminOnly><AuditLog /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

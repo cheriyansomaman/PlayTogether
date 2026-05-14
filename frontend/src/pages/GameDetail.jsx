@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import RecordResultModal from '../components/modals/RecordResultModal'
 import AddParticipantModal from '../components/modals/AddParticipantModal'
 import ConfirmModal from '../components/modals/ConfirmModal'
-import { SportIcon, PositionBadge } from '../utils/sportIcons'
+import { ageLabel, SportIcon, PositionBadge } from '../utils/sportIcons'
 import { Users2, PersonStanding, MapPin, Clock3, Trash2, Pencil, BarChart2 } from 'lucide-react'
 
 function TeamAvatar({ team }) {
@@ -143,6 +143,9 @@ export default function GameDetail() {
   const isTeamGame = game?.game_mode === 'team'
   const myMember = members.find((m) => m.user_id === user?.id)
   const canEdit  = myMember?.role === 'admin' || myMember?.role === 'coordinator'
+  const canAddParticipants    = canEdit && game?.status !== 'active' && game?.status !== 'completed' && game?.status !== 'cancelled'
+  const canRemoveParticipants = canEdit && game?.status !== 'active' && game?.status !== 'completed' && game?.status !== 'cancelled'
+  const canRecordResults   = canEdit && game?.status !== 'cancelled'
 
   if (loading) return (
     <div className="flex justify-center py-24">
@@ -176,8 +179,8 @@ export default function GameDetail() {
         </div>
         <h1 className="text-2xl font-bold text-white">
           {game.name}
-          {game.age_restricted && (
-            <span className="ml-2 text-base font-normal text-slate-400">({game.age_from}–{game.age_to})</span>
+          {game.age_restricted && ageLabel(game.age_from, game.age_to) && (
+            <span className="ml-2 text-base font-normal text-slate-400">({ageLabel(game.age_from, game.age_to)})</span>
           )}
         </h1>
         <p className="text-slate-400 text-sm mt-1 capitalize">{game.game_type}</p>
@@ -218,17 +221,21 @@ export default function GameDetail() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <p className="text-sm text-slate-400">{participants.length} participant{participants.length !== 1 ? 's' : ''}</p>
-            {canEdit && <button className="btn-primary" onClick={() => setShowAddParticipant(true)}>+ Add Participant</button>}
+            {canEdit && (
+              <button className="btn-primary" onClick={() => setShowAddParticipant(true)} disabled={!canAddParticipants} title={!canAddParticipants ? 'Cannot add participants to a live or completed game' : undefined}>
+                + Add Participant
+              </button>
+            )}
           </div>
 
           {participants.length === 0 ? (
             <div className="text-center py-16">
               <div className="mb-3 text-slate-400"><PersonStanding size={40} /></div>
               <p className="text-slate-400">No participants added yet.</p>
-              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowAddParticipant(true)}>Add First Participant</button>}
+              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowAddParticipant(true)} disabled={!canAddParticipants} title={!canAddParticipants ? 'Cannot add participants to a live or completed game' : undefined}>Add First Participant</button>}
             </div>
           ) : (
-            <div className="card overflow-hidden">
+            <div className="card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
                   <tr>
@@ -262,7 +269,7 @@ export default function GameDetail() {
                         <td className="px-4 py-3 hidden lg:table-cell text-slate-400">{p.age || '—'}</td>
                         {canEdit && (
                           <td className="px-4 py-3 text-right">
-                            <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)}><Trash2 size={14} /></button>
+                            <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)} disabled={!canRemoveParticipants} title={!canRemoveParticipants ? 'Cannot remove participants from a live, completed, or cancelled game' : undefined}><Trash2 size={14} /></button>
                           </td>
                         )}
                       </tr>
@@ -305,6 +312,8 @@ export default function GameDetail() {
                         <button
                           className="btn-secondary btn-sm shrink-0"
                           onClick={() => { setAddForTeamId(team.id); setShowAddParticipant(true) }}
+                          disabled={!canAddParticipants}
+                          title={!canAddParticipants ? 'Cannot add participants to a live or completed game' : undefined}
                         >+ Add</button>
                       )}
                     </div>
@@ -335,7 +344,7 @@ export default function GameDetail() {
                               <td className="px-4 py-2.5 hidden md:table-cell text-slate-400">{p.age || '—'}</td>
                               {canEdit && (
                                 <td className="px-4 py-2.5 text-right">
-                                  <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)}><Trash2 size={14} /></button>
+                                  <button className="btn-danger btn-sm" onClick={() => handleDeleteParticipant(p.id)} disabled={!canRemoveParticipants} title={!canRemoveParticipants ? 'Cannot remove participants from a live, completed, or cancelled game' : undefined}><Trash2 size={14} /></button>
                                 </td>
                               )}
                             </tr>
@@ -364,7 +373,7 @@ export default function GameDetail() {
               )}
             </div>
             {canEdit && (
-              <button className="btn-primary" onClick={() => setShowRecord(true)}>
+              <button className="btn-primary" onClick={() => setShowRecord(true)} disabled={!canRecordResults} title={!canRecordResults ? 'Cannot record results for a cancelled game' : undefined}>
                 {result ? <><Pencil size={14} className="inline mr-1" />Update Results</> : <><BarChart2 size={14} className="inline mr-1" />Record Results</>}
               </button>
             )}
@@ -374,7 +383,7 @@ export default function GameDetail() {
             <div className="text-center py-16">
               <div className="mb-3 text-slate-400"><BarChart2 size={48} /></div>
               <p className="text-slate-400">No results recorded yet.</p>
-              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowRecord(true)}>Record Results</button>}
+              {canEdit && <button className="btn-primary mt-4" onClick={() => setShowRecord(true)} disabled={!canRecordResults} title={!canRecordResults ? 'Cannot record results for a cancelled game' : undefined}>Record Results</button>}
             </div>
           ) : (
             <div className="space-y-6">

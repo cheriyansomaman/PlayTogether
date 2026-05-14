@@ -104,11 +104,13 @@ func (h *Handler) CreateTeam(c *gin.Context) {
 	}
 
 	var id string
-	err := h.db.QueryRow(
-		`INSERT INTO pt_event_teams (event_id, name, description, logo_url, logo_base64, color, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-		eventID, req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), callerID.(string),
-	).Scan(&id)
+	err := h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		return tx.QueryRow(
+			`INSERT INTO pt_event_teams (event_id, name, description, logo_url, logo_base64, color, created_by)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+			eventID, req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), callerID.(string),
+		).Scan(&id)
+	})
 	if err != nil {
 		log.Printf("create team error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create team"})
@@ -151,10 +153,13 @@ func (h *Handler) UpdateTeam(c *gin.Context) {
 		return
 	}
 
-	_, err = h.db.Exec(
-		"UPDATE pt_event_teams SET name=$1, description=$2, logo_url=$3, logo_base64=$4, color=$5, updated_at=NOW() WHERE id=$6",
-		req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), id,
-	)
+	err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, e := tx.Exec(
+			"UPDATE pt_event_teams SET name=$1, description=$2, logo_url=$3, logo_base64=$4, color=$5, updated_at=NOW() WHERE id=$6",
+			req.Name, nullableStr(req.Description), nullableStr(req.LogoURL), nullableStr(req.LogoBase64), nullableStr(req.Color), id,
+		)
+		return e
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update team"})
 		return
@@ -179,6 +184,9 @@ func (h *Handler) DeleteTeam(c *gin.Context) {
 		return
 	}
 
-	h.db.Exec("DELETE FROM pt_event_teams WHERE id = $1", id)
+	h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, e := tx.Exec("DELETE FROM pt_event_teams WHERE id = $1", id)
+		return e
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "team deleted"})
 }

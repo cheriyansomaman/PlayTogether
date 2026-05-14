@@ -235,7 +235,7 @@ export default function AddEventMemberModal({ eventId, member, teams = [], onClo
               <input className="input" value={form.user_name} onChange={set('user_name')} placeholder="Full name" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label">Age</label>
                 <input className="input" type="number" min="1" max="120" value={form.age} onChange={set('age')} placeholder="25" />

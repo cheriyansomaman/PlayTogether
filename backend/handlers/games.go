@@ -15,7 +15,7 @@ import (
 
 func scanGameRows(rows *sql.Rows) (*models.Game, error) {
 	var g models.Game
-	var description, gameType, venue, createdBy sql.NullString
+	var description, gameType, venue, createdBy, updatedBy sql.NullString
 	var ageStart, ageEnd sql.NullInt64
 	var scheduledAt sql.NullTime
 	var teamIDsJSON, participantIDsJSON []byte
@@ -24,7 +24,7 @@ func scanGameRows(rows *sql.Rows) (*models.Game, error) {
 		&g.ID, &g.EventID, &g.Name, &description,
 		&g.GameMode, &g.AgeRestricted, &ageStart, &ageEnd,
 		&gameType, &g.Status, &scheduledAt, &venue,
-		&teamIDsJSON, &participantIDsJSON, &createdBy,
+		&teamIDsJSON, &participantIDsJSON, &createdBy, &updatedBy,
 		&g.CreatedAt, &g.UpdatedAt,
 	)
 	if err != nil {
@@ -34,6 +34,7 @@ func scanGameRows(rows *sql.Rows) (*models.Game, error) {
 	g.GameType = gameType.String
 	g.Venue = venue.String
 	g.CreatedBy = createdBy.String
+	g.UpdatedBy = updatedBy.String
 	g.AgeFrom = int(ageStart.Int64)
 	g.AgeTo = int(ageEnd.Int64)
 	if scheduledAt.Valid {
@@ -46,7 +47,7 @@ func scanGameRows(rows *sql.Rows) (*models.Game, error) {
 
 func (h *Handler) getGameByID(id string) (*models.Game, error) {
 	const cols = `id, event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
-		game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, created_at, updated_at`
+		game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, updated_by, created_at, updated_at`
 
 	rows, err := h.db.Query("SELECT "+cols+" FROM pt_event_games WHERE id = $1", id)
 	if err != nil {
@@ -60,7 +61,7 @@ func (h *Handler) getGameByID(id string) (*models.Game, error) {
 }
 
 const gameSelectCols = `id, event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
-	game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, created_at, updated_at`
+	game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by, updated_by, created_at, updated_at`
 
 // ── Request types ─────────────────────────────────────────────────────────────
 
@@ -137,16 +138,17 @@ func (h *Handler) CreateGame(c *gin.Context) {
 	}
 
 	var id string
-	err := h.db.QueryRow(
-		`INSERT INTO pt_event_games (event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
-		  game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', $9, $10, $11, $12, $13) RETURNING id`,
-		eventID, req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
-		nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
-		nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
-		jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), callerID.(string),
-	).Scan(&id)
-	if err != nil {
+	if err := h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		return tx.QueryRow(
+			`INSERT INTO pt_event_games (event_id, name, description, individual_or_team, age_restriction, age_start, age_end,
+			  game_type, status, scheduled_at, venue, team_ids, participant_ids, created_by)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', $9, $10, $11, $12, $13) RETURNING id`,
+			eventID, req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
+			nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
+			nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
+			jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), callerID.(string),
+		).Scan(&id)
+	}); err != nil {
 		log.Printf("create game error: %v", err)
 		if strings.Contains(err.Error(), "idx_pt_event_games_event_name_age") {
 			c.JSON(http.StatusConflict, gin.H{"error": "a game with this name and age range already exists in this event"})
@@ -202,16 +204,18 @@ func (h *Handler) UpdateGame(c *gin.Context) {
 		scheduledAt = req.ScheduledAt
 	}
 
-	_, err = h.db.Exec(
-		`UPDATE pt_event_games SET name=$1, description=$2, individual_or_team=$3, age_restriction=$4, age_start=$5, age_end=$6,
-		  game_type=$7, scheduled_at=$8, venue=$9, team_ids=$10, participant_ids=$11, updated_at=NOW()
-		 WHERE id=$12`,
-		req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
-		nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
-		nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
-		jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), id,
-	)
-	if err != nil {
+	if err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`UPDATE pt_event_games SET name=$1, description=$2, individual_or_team=$3, age_restriction=$4, age_start=$5, age_end=$6,
+			  game_type=$7, scheduled_at=$8, venue=$9, team_ids=$10, participant_ids=$11, updated_by=$12, updated_at=NOW()
+			 WHERE id=$13`,
+			req.Name, nullableStr(req.Description), gameMode, req.AgeRestricted,
+			nullableInt(req.AgeFrom), nullableInt(req.AgeTo),
+			nullableStr(req.GameType), scheduledAt, nullableStr(req.Venue),
+			jsonMarshal(req.TeamIDs), jsonMarshal(req.ParticipantIDs), callerID.(string), id,
+		)
+		return err
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update game"})
 		return
 	}
@@ -244,7 +248,10 @@ func (h *Handler) UpdateGameStatus(c *gin.Context) {
 		return
 	}
 
-	h.db.Exec("UPDATE pt_event_games SET status=$1, updated_at=NOW() WHERE id=$2", string(req.Status), id)
+	h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, err := tx.Exec("UPDATE pt_event_games SET status=$1, updated_by=$2, updated_at=NOW() WHERE id=$3", string(req.Status), callerID.(string), id)
+		return err
+	})
 
 	updated, _ := h.getGameByID(id)
 	h.hub.Broadcast(models.WSMessage{Type: "game_status_changed", EventID: game.EventID, GameID: id, Data: updated})
@@ -271,22 +278,13 @@ func (h *Handler) CancelGame(c *gin.Context) {
 		return
 	}
 
-	tx, err := h.db.Begin()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
-		return
-	}
-	defer tx.Rollback()
-
-	if _, err = tx.Exec("UPDATE pt_event_games SET status='cancelled', updated_at=NOW() WHERE id=$1", id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
-		return
-	}
-	if _, err = tx.Exec("DELETE FROM pt_event_results WHERE game_id=$1", id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove results"})
-		return
-	}
-	if err = tx.Commit(); err != nil {
+	if err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		if _, err := tx.Exec("UPDATE pt_event_games SET status='cancelled', updated_by=$1, updated_at=NOW() WHERE id=$2", callerID.(string), id); err != nil {
+			return err
+		}
+		_, err := tx.Exec("DELETE FROM pt_event_results WHERE game_id=$1", id)
+		return err
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel game"})
 		return
 	}
@@ -311,6 +309,9 @@ func (h *Handler) DeleteGame(c *gin.Context) {
 		return
 	}
 
-	h.db.Exec("DELETE FROM pt_event_games WHERE id = $1", id)
+	h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, err := tx.Exec("DELETE FROM pt_event_games WHERE id = $1", id)
+		return err
+	})
 	c.JSON(http.StatusOK, gin.H{"message": "game deleted"})
 }

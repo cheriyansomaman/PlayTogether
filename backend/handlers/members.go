@@ -148,13 +148,15 @@ func (h *Handler) AddEventMember(c *gin.Context) {
 		return
 	}
 
-	_, err = h.db.Exec(
-		`INSERT INTO pt_event_members (event_id, user_id, role, team_id, added_by)
-		 VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role, team_id = EXCLUDED.team_id, updated_at = NOW()`,
-		eventID, target.ID, string(req.Role), nullableStr(req.TeamID), callerID.(string),
-	)
-	if err != nil {
+	if err = h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`INSERT INTO pt_event_members (event_id, user_id, role, team_id, added_by)
+			 VALUES ($1, $2, $3, $4, $5)
+			 ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role, team_id = EXCLUDED.team_id, updated_at = NOW()`,
+			eventID, target.ID, string(req.Role), nullableStr(req.TeamID), callerID.(string),
+		)
+		return err
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add member"})
 		return
 	}
@@ -193,12 +195,14 @@ func (h *Handler) UpdateEventMember(c *gin.Context) {
 		return
 	}
 
-	_, err := h.db.Exec(
-		`UPDATE pt_event_members SET role=$1, team_id=$2, updated_at=NOW()
-		 WHERE event_id=$3 AND user_id=$4`,
-		string(req.Role), nullableStr(req.TeamID), eventID, targetUserID,
-	)
-	if err != nil {
+	if err := h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`UPDATE pt_event_members SET role=$1, team_id=$2, updated_at=NOW()
+			 WHERE event_id=$3 AND user_id=$4`,
+			string(req.Role), nullableStr(req.TeamID), eventID, targetUserID,
+		)
+		return err
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update member"})
 		return
 	}
@@ -229,8 +233,11 @@ func (h *Handler) RemoveEventMember(c *gin.Context) {
 		return
 	}
 
-	h.db.Exec("DELETE FROM pt_event_members WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
-	h.db.Exec("DELETE FROM pt_event_join_requests WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
+	h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		tx.Exec("DELETE FROM pt_event_members WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
+		tx.Exec("DELETE FROM pt_event_join_requests WHERE event_id=$1 AND user_id=$2", eventID, targetUserID)
+		return nil
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
 }

@@ -34,6 +34,23 @@ func jsonUnmarshal(src []byte, dst interface{}) {
 	}
 }
 
+// withAuditCtx runs fn inside a transaction with app.current_user_id set so the
+// audit trigger can record who performed the change.
+func (h *Handler) withAuditCtx(userID string, fn func(tx *sql.Tx) error) error {
+	tx, err := h.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("SELECT set_config('app.current_user_id', $1, true)", userID); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // getEventRole returns the caller's role for the given event from pt_event_members.
 func (h *Handler) getEventRole(userID, eventID string) (models.EventRole, bool) {
 	var eventRole models.EventRole

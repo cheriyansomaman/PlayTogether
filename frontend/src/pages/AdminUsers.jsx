@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
-import { Trash2, ImageIcon, Pencil } from 'lucide-react'
-import { listUsers, createUser, deleteUser, updateUser, updateUserProfilePicture, removeUserProfilePicture } from '../services/api'
+import { Trash2, ImageIcon, Pencil, KeyRound } from 'lucide-react'
+import { listUsers, createUser, deleteUser, updateUser, updateUserProfilePicture, removeUserProfilePicture, adminResetPassword } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import PasswordInput from '../components/PasswordInput'
@@ -49,6 +49,9 @@ export default function AdminUsers() {
   const [picRemoving, setPicRemoving]   = useState(null) // userId being removed
   const picInputRef = useRef(null)
   const [picTargetId, setPicTargetId] = useState(null)
+  const [resetTarget, setResetTarget] = useState(null)
+  const [resetForm, setResetForm]     = useState({ password: '', confirm: '' })
+  const [resetSaving, setResetSaving] = useState(false)
 
   useEffect(() => {
     listUsers()
@@ -140,6 +143,23 @@ export default function AdminUsers() {
     }
   }
 
+  const handleResetPassword = async (e) => {
+    e.preventDefault()
+    if (!resetTarget) return
+    if (resetForm.password !== resetForm.confirm) { toast.error('Passwords do not match'); return }
+    setResetSaving(true)
+    try {
+      await adminResetPassword(resetTarget.id, { new_password: resetForm.password })
+      toast.success(`Password reset for ${resetTarget.name}`)
+      setResetTarget(null)
+      setResetForm({ password: '', confirm: '' })
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to reset password')
+    } finally {
+      setResetSaving(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
@@ -208,6 +228,7 @@ export default function AdminUsers() {
         <div className="px-4 py-3 bg-slate-800 border-b border-slate-600">
           <h2 className="font-medium text-white">{users.length} Users</h2>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-800 text-slate-400 text-xs uppercase tracking-wide">
             <tr>
@@ -283,6 +304,13 @@ export default function AdminUsers() {
                     >
                       <Pencil size={14} />
                     </button>
+                    <button
+                      className="text-slate-400 hover:text-amber-400 transition-all text-xs px-2 py-1 rounded hover:bg-amber-500/10"
+                      onClick={() => { setResetTarget(u); setResetForm({ password: '', confirm: '' }) }}
+                      title="Reset password"
+                    >
+                      <KeyRound size={14} />
+                    </button>
                     {u.id !== currentUser?.id && (
                       <button
                         className="text-slate-500 hover:text-red-400 transition-all text-xs px-2 py-1 rounded hover:bg-red-500/10"
@@ -298,6 +326,7 @@ export default function AdminUsers() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {editTarget && (
@@ -308,7 +337,7 @@ export default function AdminUsers() {
               <button onClick={() => setEditTarget(null)} className="text-white/40 hover:text-white transition-all text-xl leading-none">×</button>
             </div>
             <form onSubmit={handleEditSave} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label">First Name</label>
                   <input className="input" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} required placeholder="First name" />
@@ -322,7 +351,7 @@ export default function AdminUsers() {
                 <label className="label">Email</label>
                 <input className="input" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} placeholder="email@example.com" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="label">Role</label>
                   <select className="input" value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
@@ -368,6 +397,43 @@ export default function AdminUsers() {
           onConfirm={handleDelete}
           onClose={() => setDeleteTarget(null)}
         />
+      )}
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)' }}>
+          <div className="card w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">Reset Password</h2>
+              <button onClick={() => setResetTarget(null)} className="text-white/40 hover:text-white transition-all text-xl leading-none">×</button>
+            </div>
+            <p className="text-sm text-slate-400">Set new password for <span className="text-white font-medium">{resetTarget.name}</span></p>
+            <form onSubmit={handleResetPassword} className="space-y-3">
+              <div>
+                <label className="label">New Password</label>
+                <PasswordInput className="input" value={resetForm.password} onChange={(e) => setResetForm({ ...resetForm, password: e.target.value })} required minLength={6} placeholder="Min. 6 characters" autoFocus />
+              </div>
+              <div>
+                <label className="label">Confirm Password</label>
+                <PasswordInput
+                  className={`input ${resetForm.confirm && resetForm.password !== resetForm.confirm ? 'border-red-500' : ''}`}
+                  value={resetForm.confirm}
+                  onChange={(e) => setResetForm({ ...resetForm, confirm: e.target.value })}
+                  required minLength={6}
+                  placeholder="Repeat password"
+                />
+                {resetForm.confirm && resetForm.password !== resetForm.confirm && (
+                  <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" className="btn-secondary" onClick={() => setResetTarget(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={resetSaving || !resetForm.password || resetForm.password !== resetForm.confirm}>
+                  {resetSaving ? 'Saving…' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       <input ref={picInputRef} type="file" accept="image/*" className="hidden" onChange={handlePicChange} />

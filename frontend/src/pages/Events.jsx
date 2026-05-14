@@ -20,7 +20,7 @@ function highlight(text, query) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark className="bg-yellow-400/30 text-yellow-200 rounded-sm">{text.slice(idx, idx + query.length)}</mark>
+      <mark className="bg-yellow-200 text-yellow-800 rounded-sm">{text.slice(idx, idx + query.length)}</mark>
       {text.slice(idx + query.length)}
     </>
   )
@@ -47,23 +47,23 @@ function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChang
         <div className="flex items-center gap-2">
           {logoSrc && !logoError
             ? <img src={logoSrc} alt={ev.name} className="w-6 h-6 rounded object-cover shrink-0" onError={() => setLogoError(true)} />
-            : <span className="text-slate-300"><SportIcon sport={ev.event_type} size={24} /></span>
+            : <span className="text-blue-500"><SportIcon sport={ev.event_type} size={24} /></span>
           }
           {isOwner && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 leading-none">Mine</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 leading-none">Mine</span>
           )}
         </div>
         <span className={`badge badge-${ev.status}`}>{ev.status}</span>
       </div>
       <Link to={`/events/${ev.id}`} className="group">
-        <h3 className="font-semibold text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+        <h3 className="font-semibold text-gray-100 group-hover:text-blue-600 transition-colors line-clamp-1">
           {highlight(ev.name, query)}
         </h3>
       </Link>
-      <p className="text-xs text-slate-400 mt-1 capitalize">{highlight(ev.event_type, query)}</p>
-      {ev.location && <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><MapPin size={12} className="inline shrink-0" />{highlight(ev.location, query)}</p>}
-      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Calendar size={12} className="inline shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</p>
-      {ev.description && <p className="text-xs text-slate-400 mt-2 line-clamp-2">{highlight(ev.description, query)}</p>}
+      <p className="text-xs text-gray-600 mt-1 capitalize">{highlight(ev.event_type, query)}</p>
+      {ev.location && <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><MapPin size={12} className="inline shrink-0" />{highlight(ev.location, query)}</p>}
+      <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Calendar size={12} className="inline shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</p>
+      {ev.description && <p className="text-xs text-gray-600 mt-2 line-clamp-2">{highlight(ev.description, query)}</p>}
       <div className="mt-auto pt-4 flex gap-2 flex-wrap">
         <Link to={`/events/${ev.id}`} className="btn-secondary btn-sm flex-1 text-center">View</Link>
         {isAdmin && STATUS_FLOW[ev.status] && (
@@ -85,27 +85,27 @@ function GridCard({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChang
 // ── List row ──────────────────────────────────────────────────────────────────
 function ListRow({ ev, isOwner, isAdmin, query, onEdit, onDelete, onStatusChange }) {
   return (
-    <div className="card px-5 py-4 flex items-center gap-4 hover:border-slate-500 transition-colors">
-      <span className="text-slate-300 shrink-0"><SportIcon sport={ev.event_type} size={24} /></span>
+    <div className="card px-5 py-4 flex items-center gap-4 hover:shadow-lg transition-all">
+      <span className="text-blue-500 shrink-0"><SportIcon sport={ev.event_type} size={24} /></span>
 
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <Link to={`/events/${ev.id}`} className="font-semibold text-white hover:text-blue-400 transition-colors truncate">
+          <Link to={`/events/${ev.id}`} className="font-semibold text-gray-100 hover:text-blue-600 transition-colors truncate">
             {highlight(ev.name, query)}
           </Link>
           <span className={`badge badge-${ev.status} shrink-0`}>{ev.status}</span>
           {isOwner && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 leading-none shrink-0">Mine</span>
+            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 leading-none shrink-0">Mine</span>
           )}
         </div>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
-          <span className="text-xs text-slate-400 capitalize">{highlight(ev.event_type, query)}</span>
-          {ev.location && <span className="text-xs text-slate-500 inline-flex items-center gap-1"><MapPin size={12} className="inline mr-1 shrink-0" />{highlight(ev.location, query)}</span>}
-          <span className="text-xs text-slate-500 inline-flex items-center gap-1"><Calendar size={12} className="inline mr-1 shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</span>
+          <span className="text-xs text-gray-600 capitalize">{highlight(ev.event_type, query)}</span>
+          {ev.location && <span className="text-xs text-gray-500 inline-flex items-center gap-1"><MapPin size={12} className="inline mr-1 shrink-0" />{highlight(ev.location, query)}</span>}
+          <span className="text-xs text-gray-500 inline-flex items-center gap-1"><Calendar size={12} className="inline mr-1 shrink-0" />{ev.start_date}{ev.end_date ? ` – ${ev.end_date}` : ''}</span>
         </div>
         {ev.description && (
-          <p className="text-xs text-slate-400 mt-1 line-clamp-1">{highlight(ev.description, query)}</p>
+          <p className="text-xs text-gray-600 mt-1 line-clamp-1">{highlight(ev.description, query)}</p>
         )}
       </div>
 
@@ -133,7 +133,7 @@ function Section({ title, events, view, ...cardProps }) {
   if (events.length === 0) return null
   return (
     <section>
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">{title}</h2>
+      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">{title}</h2>
       <EventList events={events} view={view} {...cardProps} />
     </section>
   )
@@ -157,12 +157,12 @@ function EventList({ events, view, ...cardProps }) {
 // ── View toggle button ────────────────────────────────────────────────────────
 function ViewToggle({ view, onChange }) {
   return (
-    <div className="flex rounded-lg border border-slate-600 overflow-hidden">
+    <div className="flex rounded-lg border border-gray-300 overflow-hidden bg-white shadow-sm">
       <button
         onClick={() => onChange('grid')}
         title="Grid view"
         className={`px-3 py-1.5 text-sm transition-colors ${
-          view === 'grid' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+          view === 'grid' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
         }`}
       >
         ⊞
@@ -170,8 +170,8 @@ function ViewToggle({ view, onChange }) {
       <button
         onClick={() => onChange('list')}
         title="List view"
-        className={`px-3 py-1.5 text-sm transition-colors border-l border-slate-600 ${
-          view === 'list' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'
+        className={`px-3 py-1.5 text-sm transition-colors border-l border-gray-300 ${
+          view === 'list' ? 'bg-blue-500 text-white' : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
         }`}
       >
         ☰
@@ -277,7 +277,7 @@ export default function Events() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-white">Events</h1>
+        <h1 className="text-2xl font-bold text-gray-100">Events</h1>
         <div className="flex items-center gap-3">
           <ViewToggle view={view} onChange={changeView} />
           <button className="btn-primary" onClick={() => { setEditEvent(null); setShowCreate(true) }}>
@@ -288,7 +288,7 @@ export default function Events() {
 
       {/* Search bar */}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Search size={14} /></span>
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"><Search size={14} /></span>
         <input
           className="input pl-9 w-full"
           placeholder="Search by name, type, location, or description…"
@@ -298,7 +298,7 @@ export default function Events() {
         {query && (
           <button
             onClick={() => setQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors text-lg leading-none"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors text-lg leading-none"
           >
             ×
           </button>
@@ -312,7 +312,7 @@ export default function Events() {
             key={f}
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              filter === f ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'
+              filter === f ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:text-blue-600 hover:bg-gray-100'
             }`}
           >
             {f === 'mine' ? 'My Events' : f.charAt(0).toUpperCase() + f.slice(1)}
@@ -323,7 +323,7 @@ export default function Events() {
 
       {/* Search summary */}
       {query && (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-gray-600">
           {noResults
             ? `No events match "${query}"`
             : `${searched.length} event${searched.length !== 1 ? 's' : ''} matching "${query}"`}
@@ -333,23 +333,23 @@ export default function Events() {
       {/* Content */}
       {events.length === 0 ? (
         <div className="text-center py-20">
-          <div className="mb-3 text-slate-400 flex justify-center"><Building2 size={56} /></div>
-          <p className="text-white font-semibold text-lg">No events yet</p>
-          <p className="text-slate-400 text-sm mt-1 mb-6">Be the first to create one.</p>
+          <div className="mb-3 text-gray-400 flex justify-center"><Building2 size={56} /></div>
+          <p className="text-gray-100 font-semibold text-lg">No events yet</p>
+          <p className="text-gray-600 text-sm mt-1 mb-6">Be the first to create one.</p>
           <button className="btn-primary" onClick={() => setShowCreate(true)}>Create Event</button>
         </div>
       ) : noResults ? (
         <div className="text-center py-20">
-          <div className="mb-3 text-slate-400 flex justify-center"><Search size={40} /></div>
-          <p className="text-white font-semibold">No events found</p>
-          <p className="text-slate-400 text-sm mt-1">Try a different search term or clear the search.</p>
+          <div className="mb-3 text-gray-400 flex justify-center"><Search size={40} /></div>
+          <p className="text-gray-100 font-semibold">No events found</p>
+          <p className="text-gray-600 text-sm mt-1">Try a different search term or clear the search.</p>
           <button className="btn-secondary mt-4" onClick={() => setQuery('')}>Clear Search</button>
         </div>
       ) : filtered !== null ? (
         filtered.length === 0 ? (
           <div className="text-center py-20">
-            <div className="mb-3 text-slate-400 flex justify-center"><Folder size={40} /></div>
-            <p className="text-slate-400">No events match this filter{query ? ' and search' : ''}</p>
+            <div className="mb-3 text-gray-400 flex justify-center"><Folder size={40} /></div>
+            <p className="text-gray-600">No events match this filter{query ? ' and search' : ''}</p>
           </div>
         ) : (
           <EventList events={filtered} {...cardProps} />

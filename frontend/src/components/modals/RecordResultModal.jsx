@@ -367,7 +367,7 @@ export default function RecordResultModal({ game, existingResult, participants, 
                 )}
 
                 {/* Time + Notes */}
-                <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                   <div>
                     <label className="label text-xs">Time</label>
                     <input className="input text-sm" value={pos.time}

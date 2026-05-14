@@ -80,7 +80,7 @@ func (h *Handler) ListParticipants(c *gin.Context) {
 		)
 	} else {
 		rows, err = h.db.Query(
-			"SELECT "+cols+" FROM pt_event_game_participants WHERE event_id=$1 AND game_id IS NULL ORDER BY name ASC",
+			"SELECT "+cols+" FROM pt_event_game_participants WHERE event_id=$1 ORDER BY name ASC",
 			eventID,
 		)
 	}

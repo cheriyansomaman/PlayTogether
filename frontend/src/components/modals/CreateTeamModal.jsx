@@ -2,12 +2,16 @@ import { useState, useRef } from 'react'
 import { createTeam, updateTeam } from '../../services/api'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
-import { ImageIcon } from 'lucide-react'
+import { ImageIcon, Palette } from 'lucide-react'
 
 const PRESET_COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
-  '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#64748b',
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16',
+  '#22c55e', '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
+  '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#ec4899',
+  '#f43f5e', '#64748b', '#475569', '#92400e', '#1e293b',
 ]
+
+const isValidHex = (v) => /^#[0-9a-fA-F]{6}$/i.test(v)
 
 // Resize + compress to JPEG before base64-encoding. Keeps Couchbase doc small.
 // Uses URL.createObjectURL (not FileReader.readAsDataURL) so the browser decodes
@@ -187,31 +191,51 @@ export default function CreateTeamModal({ eventId, team, onClose, onSave }) {
         {/* Color */}
         <div>
           <label className="label">Team Color</label>
-          <div className="flex gap-2 flex-wrap items-center">
+          <div className="flex gap-1.5 flex-wrap mb-3">
             {PRESET_COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
                 title={c}
                 onClick={() => setForm((p) => ({ ...p, color: c }))}
-                className="w-8 h-8 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                className="w-7 h-7 rounded-full transition-transform hover:scale-110 focus:outline-none shrink-0"
                 style={{
                   backgroundColor: c,
                   boxShadow: form.color === c ? `0 0 0 2px #1e293b, 0 0 0 4px ${c}` : 'none',
                 }}
               />
             ))}
-            <label
-              title="Custom color"
-              className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors text-xs overflow-hidden"
-              style={{
-                backgroundColor: PRESET_COLORS.includes(form.color) ? '#334155' : form.color,
-                boxShadow: !PRESET_COLORS.includes(form.color) ? `0 0 0 2px #1e293b, 0 0 0 4px ${form.color}` : 'none',
-                color: PRESET_COLORS.includes(form.color) ? '#94a3b8' : 'transparent',
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              className="w-8 h-8 rounded-lg border border-slate-600 shrink-0 transition-colors"
+              style={{ backgroundColor: isValidHex(form.color) ? form.color : '#334155' }}
+            />
+            <input
+              className="input text-xs font-mono w-28"
+              placeholder="#3b82f6"
+              maxLength={7}
+              value={form.color}
+              spellCheck={false}
+              onChange={(e) => {
+                let v = e.target.value.trim()
+                if (v && !v.startsWith('#')) v = '#' + v
+                setForm((p) => ({ ...p, color: v.slice(0, 7) }))
               }}
-            >
-              +
-              <input type="color" value={form.color} onChange={set('color')} className="sr-only" />
+              onBlur={() => {
+                if (!isValidHex(form.color)) setForm((p) => ({ ...p, color: '#3b82f6' }))
+              }}
+            />
+            <label title="Open color picker" className="cursor-pointer shrink-0">
+              <div className="w-8 h-8 rounded-lg border border-slate-600 bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-400 transition-colors">
+                <Palette size={14} />
+              </div>
+              <input
+                type="color"
+                value={isValidHex(form.color) ? form.color : '#3b82f6'}
+                onChange={set('color')}
+                className="sr-only"
+              />
             </label>
           </div>
         </div>

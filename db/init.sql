@@ -84,6 +84,7 @@ CREATE TABLE pt_event_games
     team_ids           JSONB,
     participant_ids    JSONB,
     created_by         UUID REFERENCES pt_users (id) ON DELETE SET NULL,
+    updated_by         UUID REFERENCES pt_users (id) ON DELETE SET NULL,
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -236,4 +237,5 @@ INSERT INTO pt_event_role_access (event_id, action, role_admin, role_coordinator
     (NULL, 'cancel_game',                   TRUE,  TRUE,  FALSE),
     (NULL, 'duplicate_game',                TRUE,  FALSE, FALSE),
     (NULL, 'edit_game',                     TRUE,  FALSE, FALSE),
-    (NULL, 'delete_game',                   TRUE,  FALSE, FALSE);
+    (NULL, 'delete_game',                   TRUE,  FALSE, FALSE),
+    (NULL, 'view_action_history',           TRUE,  FALSE, FALSE);

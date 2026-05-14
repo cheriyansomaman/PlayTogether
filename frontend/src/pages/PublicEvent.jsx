@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getPublicEvent } from '../services/api'
-import { SportIcon, PositionBadge } from '../utils/sportIcons'
+import { ageLabel, SportIcon, PositionBadge } from '../utils/sportIcons'
 import { MapPin, Clock3, Calendar, Link as LinkIcon, ClipboardList } from 'lucide-react'
 
 const DEFAULT_POINT_SYSTEM = [
@@ -99,8 +99,8 @@ function GameCard({ game, result, teamMap }) {
         <div className="min-w-0">
           <div className="font-semibold text-white truncate">
             {game.name}
-            {game.age_restricted && (
-              <span className="ml-1.5 text-xs font-normal text-slate-400">({game.age_from}–{game.age_to})</span>
+            {game.age_restricted && ageLabel(game.age_from, game.age_to) && (
+              <span className="ml-1.5 text-xs font-normal text-slate-400">({ageLabel(game.age_from, game.age_to)})</span>
             )}
           </div>
           <div className="text-xs text-slate-500 capitalize">{game.game_type}</div>

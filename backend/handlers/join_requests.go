@@ -226,9 +226,9 @@ func (h *Handler) ReviewJoinRequest(c *gin.Context) {
 	}
 
 	var req struct {
-		Status   models.JoinRequestStatus `json:"status" binding:"required"`
-		Role     models.EventRole         `json:"role"`
-		TeamName string                   `json:"team_name"`
+		Status models.JoinRequestStatus `json:"status" binding:"required"`
+		Role   models.EventRole         `json:"role"`
+		TeamID string                   `json:"team_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -250,28 +250,33 @@ func (h *Handler) ReviewJoinRequest(c *gin.Context) {
 	}
 
 	now := time.Now().UTC()
-	h.db.Exec(
-		`UPDATE pt_event_join_requests SET status=$1, reviewed_by=$2, reviewed_at=$3, updated_at=NOW()
-		 WHERE event_id=$4 AND user_id=$5`,
-		string(req.Status), callerID.(string), now, eventID, targetUserID,
-	)
+	role := req.Role
+	if role == "" {
+		role = models.EventRoleViewer
+	}
+
+	h.withAuditCtx(callerID.(string), func(tx *sql.Tx) error {
+		tx.Exec(
+			`UPDATE pt_event_join_requests SET status=$1, reviewed_by=$2, reviewed_at=$3, updated_at=NOW()
+			 WHERE event_id=$4 AND user_id=$5`,
+			string(req.Status), callerID.(string), now, eventID, targetUserID,
+		)
+		if req.Status == models.JoinRequestApproved {
+			tx.Exec(
+				`INSERT INTO pt_event_members (event_id, user_id, role, team_id, added_by)
+				 VALUES ($1, $2, $3, $4, $5)
+				 ON CONFLICT (event_id, user_id) DO NOTHING`,
+				eventID, targetUserID, string(role), nullableStr(req.TeamID), callerID.(string),
+			)
+		}
+		return nil
+	})
+
 	jr.Status = req.Status
 	jr.ReviewedBy = callerID.(string)
 	jr.ReviewedAt = &now
 
 	if req.Status == models.JoinRequestApproved {
-		role := req.Role
-		if role == "" {
-			role = models.EventRoleViewer
-		}
-
-		h.db.Exec(
-			`INSERT INTO pt_event_members (event_id, user_id, role, team_name, added_by)
-			 VALUES ($1, $2, $3, $4, $5)
-			 ON CONFLICT (event_id, user_id) DO NOTHING`,
-			eventID, targetUserID, string(role), nullableStr(req.TeamName), callerID.(string),
-		)
-
 		memberRow := h.db.QueryRow(memberQuery+" WHERE em.event_id=$1 AND em.user_id=$2", eventID, targetUserID)
 		if m, err := scanMemberRow(memberRow); err == nil {
 			h.hub.Broadcast(models.WSMessage{Type: "member_added", EventID: eventID, Data: m})

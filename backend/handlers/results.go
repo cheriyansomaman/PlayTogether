@@ -123,31 +123,35 @@ func (h *Handler) RecordResult(c *gin.Context) {
 	entriesJSON := jsonMarshal(req.Entries)
 	now := time.Now().UTC()
 
-	// Upsert result — one result per game
-	var id string
-	err = h.db.QueryRow(
-		`INSERT INTO pt_event_results (event_id, game_id, result_data, status, recorded_by, recorded_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (event_id, game_id) DO UPDATE
-		   SET result_data=EXCLUDED.result_data, status=EXCLUDED.status,
-		       recorded_by=EXCLUDED.recorded_by, updated_at=NOW()
-		 RETURNING id`,
-		game.EventID, gameID, entriesJSON, req.Status, uid, now,
-	).Scan(&id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record result"})
-		return
-	}
-
-	// Update game status based on result status
 	newGameStatus := game.Status
 	if req.Status == "final" {
 		newGameStatus = models.GameStatusCompleted
 	} else if game.Status == models.GameStatusScheduled {
 		newGameStatus = models.GameStatusActive
 	}
-	if newGameStatus != game.Status {
-		h.db.Exec("UPDATE pt_event_games SET status=$1, updated_at=NOW() WHERE id=$2", string(newGameStatus), gameID)
+
+	// Upsert result — one result per game
+	var id string
+	if err = h.withAuditCtx(uid, func(tx *sql.Tx) error {
+		if err := tx.QueryRow(
+			`INSERT INTO pt_event_results (event_id, game_id, result_data, status, recorded_by, recorded_at)
+			 VALUES ($1, $2, $3, $4, $5, $6)
+			 ON CONFLICT (event_id, game_id) DO UPDATE
+			   SET result_data=EXCLUDED.result_data, status=EXCLUDED.status,
+			       recorded_by=EXCLUDED.recorded_by, updated_at=NOW()
+			 RETURNING id`,
+			game.EventID, gameID, entriesJSON, req.Status, uid, now,
+		).Scan(&id); err != nil {
+			return err
+		}
+		if newGameStatus != game.Status {
+			_, err := tx.Exec("UPDATE pt_event_games SET status=$1, updated_at=NOW() WHERE id=$2", string(newGameStatus), gameID)
+			return err
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record result"})
+		return
 	}
 
 	result := models.Result{

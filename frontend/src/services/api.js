@@ -32,11 +32,17 @@ export const updateProfilePicture = (data) => api.put('/auth/me/profile-picture'
 export const removeProfilePicture = () => api.delete('/auth/me/profile-picture')
 export const updateUserProfilePicture = (id, data) => api.put(`/auth/users/${id}/profile-picture`, data)
 export const removeUserProfilePicture = (id) => api.delete(`/auth/users/${id}/profile-picture`)
+export const changeMyPassword = (data) => api.put('/auth/me/password', data)
 export const deleteMe = () => api.delete('/auth/me')
 export const createUser = (data) => api.post('/auth/users', data)
 export const listUsers = () => api.get('/auth/users')
 export const deleteUser = (id) => api.delete(`/auth/users/${id}`)
 export const updateUser = (id, data) => api.put(`/auth/users/${id}`, data)
+export const adminResetPassword = (id, data) => api.put(`/auth/users/${id}/password`, data)
+
+// Audit log
+export const getAuditLog = (limit = 10, offset = 0) => api.get(`/audit?limit=${limit}&offset=${offset}`)
+export const getEventAuditLog = (eventId, limit = 10, offset = 0) => api.get(`/events/${eventId}/audit?limit=${limit}&offset=${offset}`)
 
 // Dashboard
 export const getDashboard = () => api.get('/dashboard')

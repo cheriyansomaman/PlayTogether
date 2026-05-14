@@ -118,13 +118,19 @@ func main() {
 	p.PUT("/games/:id/result", h.RecordResult)
 	p.DELETE("/results/:id", h.DeleteResult)
 
+	// Audit log
+	p.GET("/audit", h.ListAuditLog)
+	p.GET("/events/:id/audit", h.GetEventAuditLog)
+
 	// User management
 	p.GET("/auth/users", h.ListUsers)
 	p.POST("/auth/users", h.CreateAdminUser)
 	p.PUT("/auth/users/:id", h.UpdateUser)
+	p.PUT("/auth/users/:id/password", h.AdminResetPassword)
 	p.DELETE("/auth/users/:id", h.DeleteUser)
 
 	// Profile picture
+	p.PUT("/auth/me/password", h.ChangeMyPassword)
 	p.PUT("/auth/me/profile-picture", h.UpdateProfilePicture)
 	p.DELETE("/auth/me/profile-picture", h.RemoveProfilePicture)
 	p.PUT("/auth/users/:id/profile-picture", h.UpdateUserProfilePicture)

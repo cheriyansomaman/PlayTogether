@@ -179,6 +179,7 @@ type Game struct {
 	TeamIDs        []string   `json:"team_ids,omitempty"`
 	ParticipantIDs []string   `json:"participant_ids,omitempty"`
 	CreatedBy      string     `json:"created_by"`
+	UpdatedBy      string     `json:"updated_by,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }

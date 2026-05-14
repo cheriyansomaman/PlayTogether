@@ -4,48 +4,101 @@
 
 @layer base {
   body {
-    @apply bg-slate-800 text-slate-100 min-h-screen;
+    @apply bg-gradient-to-br from-gray-900 to-blue-900 text-white min-h-screen;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-700 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full font-medium text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.35), 0 6px 14px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .btn:hover:not(:disabled) {
+    box-shadow: 0 6px 0 rgba(0,0,0,0.35), 0 10px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25);
+    transform: translateY(-2px);
+  }
+  .btn:active:not(:disabled) {
+    box-shadow: 0 1px 0 rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.2), inset 0 2px 4px rgba(0,0,0,0.15);
+    transform: translateY(3px);
   }
   .btn-primary {
-    @apply btn bg-blue-600 hover:bg-blue-500 text-white focus:ring-blue-500;
+    @apply btn bg-gradient-to-b from-blue-400 to-blue-600 text-white;
+    box-shadow: 0 4px 0 #1d4ed8, 0 6px 14px rgba(59,130,246,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 6px 0 #1d4ed8, 0 10px 20px rgba(59,130,246,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+    transform: translateY(-2px);
+  }
+  .btn-primary:active:not(:disabled) {
+    box-shadow: 0 1px 0 #1d4ed8, 0 2px 6px rgba(59,130,246,0.3), inset 0 2px 4px rgba(0,0,0,0.15);
+    transform: translateY(3px);
   }
   .btn-secondary {
-    @apply btn bg-slate-600 hover:bg-slate-500 text-slate-100 focus:ring-slate-500;
+    @apply btn bg-gradient-to-b from-gray-100 to-gray-300 text-gray-700;
+    box-shadow: 0 4px 0 #9ca3af, 0 6px 14px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    box-shadow: 0 6px 0 #9ca3af, 0 10px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.8);
+    transform: translateY(-2px);
+  }
+  .btn-secondary:active:not(:disabled) {
+    box-shadow: 0 1px 0 #9ca3af, 0 2px 4px rgba(0,0,0,0.15), inset 0 2px 4px rgba(0,0,0,0.1);
+    transform: translateY(3px);
   }
   .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-500 text-white focus:ring-red-500;
+    @apply btn bg-gradient-to-b from-red-400 to-red-600 text-white;
+    box-shadow: 0 4px 0 #991b1b, 0 6px 14px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .btn-danger:hover:not(:disabled) {
+    box-shadow: 0 6px 0 #991b1b, 0 10px 20px rgba(239,68,68,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+    transform: translateY(-2px);
+  }
+  .btn-danger:active:not(:disabled) {
+    box-shadow: 0 1px 0 #991b1b, 0 2px 6px rgba(239,68,68,0.3), inset 0 2px 4px rgba(0,0,0,0.15);
+    transform: translateY(3px);
   }
   .btn-success {
-    @apply btn bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500;
+    @apply btn bg-gradient-to-b from-green-400 to-green-600 text-white;
+    box-shadow: 0 4px 0 #166534, 0 6px 14px rgba(34,197,94,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+  }
+  .btn-success:hover:not(:disabled) {
+    box-shadow: 0 6px 0 #166534, 0 10px 20px rgba(34,197,94,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+    transform: translateY(-2px);
+  }
+  .btn-success:active:not(:disabled) {
+    box-shadow: 0 1px 0 #166534, 0 2px 6px rgba(34,197,94,0.3), inset 0 2px 4px rgba(0,0,0,0.15);
+    transform: translateY(3px);
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }
   .card {
-    @apply bg-slate-700 border border-slate-600 rounded-xl;
+    @apply bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700/20 rounded-2xl;
+    box-shadow: 10px 10px 20px rgba(0,0,0,0.6), -10px -10px 20px rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+  }
+  .card-glass {
+    @apply bg-white/20 border border-white/30 rounded-2xl;
+    backdrop-filter: blur(15px);
+    box-shadow: 0 8px 32px rgba(31,38,135,0.37);
   }
   .input {
-    @apply w-full bg-slate-800 border border-slate-500 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all;
+    @apply w-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all;
+    box-shadow: inset 5px 5px 10px rgba(0,0,0,0.3), inset -5px -5px 10px rgba(255,255,255,0.05);
   }
   .label {
-    @apply block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5;
+    @apply block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5;
   }
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
   }
-  .badge-upcoming  { @apply badge bg-amber-500/20 text-amber-400; }
-  .badge-active    { @apply badge bg-emerald-500/20 text-emerald-400; }
-  .badge-completed { @apply badge bg-slate-500/20 text-slate-400; }
-  .badge-scheduled { @apply badge bg-blue-500/20 text-blue-400; }
-  .badge-cancelled { @apply badge bg-red-500/20 text-red-400; }
-  .badge-admin       { @apply badge bg-purple-500/20 text-purple-400; }
-  .badge-member      { @apply badge bg-blue-500/20 text-blue-400; }
-  .badge-coordinator { @apply badge bg-blue-500/20 text-blue-400; }
-  .badge-user        { @apply badge bg-slate-500/20 text-slate-400; }
+  .badge-upcoming  { @apply badge bg-gradient-to-r from-amber-200 to-amber-300 text-amber-800; }
+  .badge-active    { @apply badge bg-gradient-to-r from-green-200 to-green-300 text-green-800; }
+  .badge-completed { @apply badge bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700; }
+  .badge-scheduled { @apply badge bg-gradient-to-r from-blue-200 to-blue-300 text-blue-800; }
+  .badge-cancelled { @apply badge bg-gradient-to-r from-red-200 to-red-300 text-red-800; }
+  .badge-admin       { @apply badge bg-gradient-to-r from-purple-200 to-purple-300 text-purple-800; }
+  .badge-member      { @apply badge bg-gradient-to-r from-blue-200 to-blue-300 text-blue-800; }
+  .badge-coordinator { @apply badge bg-gradient-to-r from-blue-200 to-blue-300 text-blue-800; }
+  .badge-user        { @apply badge bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700; }
 }

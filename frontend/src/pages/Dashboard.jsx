@@ -8,9 +8,9 @@ import { SportIcon } from '../utils/sportIcons'
 import { Trophy, Target, Building2, Ticket, Medal, Award, ClipboardList, Clock3, CheckCircle } from 'lucide-react'
 
 const ROLE_COLOR = {
-  admin:  'text-purple-400 bg-purple-500/10 border-purple-500/30',
-  member: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  viewer: 'text-slate-300 bg-slate-600/40 border-slate-500',
+  admin:  'text-purple-600 bg-purple-100 border-purple-300',
+  member: 'text-blue-600 bg-blue-100 border-blue-300',
+  viewer: 'text-gray-600 bg-gray-100 border-gray-300',
 }
 
 function welcomeKey(userId) { return `pt_welcomed_${userId}` }
@@ -18,37 +18,37 @@ function welcomeKey(userId) { return `pt_welcomed_${userId}` }
 // ── Welcome screen ────────────────────────────────────────────────────────────
 function WelcomeScreen({ user, hasEvents, onCreateEvent, onJoinEvent, onViewEvents }) {
   return (
-    <div className="fixed inset-0 bg-slate-800 z-50 flex flex-col items-center justify-center px-4">
+    <div className="fixed inset-0 bg-gradient-to-br from-blue-900 to-indigo-900 z-50 flex flex-col items-center justify-center px-4">
       <div className="text-center mb-10">
-        <div className="mb-4 text-white"><Trophy size={56} /></div>
-        <h1 className="text-3xl sm:text-4xl font-bold text-white">Welcome to PlayTogether</h1>
-        <p className="text-slate-400 mt-2 text-base">
-          Hello, <span className="text-white font-semibold">{user?.name}</span>! What would you like to do?
+        <div className="mb-4 text-blue-600"><Trophy size={56} /></div>
+        <h1 className="text-3xl sm:text-4xl font-bold text-gray-100">Welcome to PlayTogether</h1>
+        <p className="text-gray-600 mt-2 text-base">
+          Hello, <span className="text-gray-100 font-semibold">{user?.name}</span>! What would you like to do?
         </p>
       </div>
       <div className={`grid gap-5 w-full ${hasEvents ? 'sm:grid-cols-3 max-w-4xl' : 'sm:grid-cols-2 max-w-2xl'}`}>
-        <button onClick={onCreateEvent} className="group card p-8 text-left hover:border-blue-500 hover:bg-slate-600/50 transition-all duration-200">
-          <div className="mb-4 text-white group-hover:scale-110 transition-transform duration-200"><Building2 size={48} /></div>
-          <h2 className="text-xl font-bold text-white mb-2">Create an Event</h2>
-          <p className="text-slate-400 text-sm leading-relaxed">Set up a new sports event. Add games, teams, and participants — then track results live.</p>
-          <div className="mt-5 inline-flex items-center gap-2 text-blue-400 text-sm font-medium group-hover:gap-3 transition-all">Get started <span>→</span></div>
+        <button onClick={onCreateEvent} className="group card p-8 text-left hover:shadow-lg transition-all duration-200">
+          <div className="mb-4 text-blue-500 group-hover:scale-110 transition-transform duration-200"><Building2 size={48} /></div>
+          <h2 className="text-xl font-bold text-gray-100 mb-2">Create an Event</h2>
+          <p className="text-gray-600 text-sm leading-relaxed">Set up a new sports event. Add games, teams, and participants — then track results live.</p>
+          <div className="mt-5 inline-flex items-center gap-2 text-blue-600 text-sm font-medium group-hover:gap-3 transition-all">Get started <span>→</span></div>
         </button>
-        <button onClick={onJoinEvent} className="group card p-8 text-left hover:border-emerald-500 hover:bg-slate-600/50 transition-all duration-200">
-          <div className="mb-4 text-emerald-400 group-hover:scale-110 transition-transform duration-200"><Target size={48} /></div>
-          <h2 className="text-xl font-bold text-white mb-2">Join an Event</h2>
-          <p className="text-slate-400 text-sm leading-relaxed">Browse events, follow live scores, and watch results update in real time.</p>
-          <div className="mt-5 inline-flex items-center gap-2 text-emerald-400 text-sm font-medium group-hover:gap-3 transition-all">Browse events <span>→</span></div>
+        <button onClick={onJoinEvent} className="group card p-8 text-left hover:shadow-lg transition-all duration-200">
+          <div className="mb-4 text-emerald-500 group-hover:scale-110 transition-transform duration-200"><Target size={48} /></div>
+          <h2 className="text-xl font-bold text-gray-100 mb-2">Join an Event</h2>
+          <p className="text-gray-600 text-sm leading-relaxed">Browse events, follow live scores, and watch results update in real time.</p>
+          <div className="mt-5 inline-flex items-center gap-2 text-emerald-600 text-sm font-medium group-hover:gap-3 transition-all">Browse events <span>→</span></div>
         </button>
         {hasEvents && (
-          <button onClick={onViewEvents} className="group card p-8 text-left hover:border-purple-500 hover:bg-slate-600/50 transition-all duration-200">
-            <div className="mb-4 text-purple-400 group-hover:scale-110 transition-transform duration-200"><Ticket size={48} /></div>
-            <h2 className="text-xl font-bold text-white mb-2">View My Events</h2>
-            <p className="text-slate-400 text-sm leading-relaxed">You've already been added to events. Jump back in and manage them.</p>
-            <div className="mt-5 inline-flex items-center gap-2 text-purple-400 text-sm font-medium group-hover:gap-3 transition-all">Go to events <span>→</span></div>
+          <button onClick={onViewEvents} className="group card p-8 text-left hover:shadow-lg transition-all duration-200">
+            <div className="mb-4 text-purple-500 group-hover:scale-110 transition-transform duration-200"><Ticket size={48} /></div>
+            <h2 className="text-xl font-bold text-gray-100 mb-2">View My Events</h2>
+            <p className="text-gray-600 text-sm leading-relaxed">You've already been added to events. Jump back in and manage them.</p>
+            <div className="mt-5 inline-flex items-center gap-2 text-purple-600 text-sm font-medium group-hover:gap-3 transition-all">Go to events <span>→</span></div>
           </button>
         )}
       </div>
-      <p className="text-slate-500 text-xs mt-10">
+      <p className="text-gray-500 text-xs mt-10">
         Signed in as <span className={`badge badge-${user?.role} ml-1`}>{user?.role}</span>
       </p>
     </div>
@@ -59,10 +59,10 @@ function WelcomeScreen({ user, hasEvents, onCreateEvent, onJoinEvent, onViewEven
 function StatCard({ label, value, icon }) {
   return (
     <div className="card p-5 flex items-center gap-4">
-      <div className="text-slate-300 shrink-0">{icon}</div>
+      <div className="text-blue-500 shrink-0">{icon}</div>
       <div>
-        <div className="text-2xl font-bold text-white">{value}</div>
-        <div className="text-xs text-slate-400">{label}</div>
+        <div className="text-2xl font-bold text-gray-100">{value}</div>
+        <div className="text-xs text-gray-600">{label}</div>
       </div>
     </div>
   )
@@ -71,14 +71,14 @@ function StatCard({ label, value, icon }) {
 // ── Event card (admin/member view) ────────────────────────────────────────────
 function EventCard({ event }) {
   return (
-    <Link to={`/events/${event.id}`} className="card p-5 hover:border-slate-500 transition-colors block">
+    <Link to={`/events/${event.id}`} className="card p-5 hover:shadow-xl transition-all block">
       <div className="flex items-start justify-between mb-3">
-        <span className="text-slate-300"><SportIcon sport={event.event_type} size={24} /></span>
+        <span className="text-blue-500"><SportIcon sport={event.event_type} size={24} /></span>
         <span className={`badge badge-${event.status}`}>{event.status}</span>
       </div>
-      <h3 className="font-semibold text-white truncate">{event.name}</h3>
-      <p className="text-xs text-slate-400 mt-1 truncate">{event.location || 'Location TBD'}</p>
-      <p className="text-xs text-slate-500 mt-2">{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</p>
+      <h3 className="font-semibold text-gray-100 truncate">{event.name}</h3>
+      <p className="text-xs text-gray-600 mt-1 truncate">{event.location || 'Location TBD'}</p>
+      <p className="text-xs text-gray-500 mt-2">{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</p>
     </Link>
   )
 }
@@ -86,17 +86,17 @@ function EventCard({ event }) {
 // ── Viewer: my joined event card ──────────────────────────────────────────────
 function MyEventCard({ event, role }) {
   return (
-    <Link to={`/events/${event.id}`} className="card p-4 hover:border-slate-500 transition-colors block">
+    <Link to={`/events/${event.id}`} className="card p-4 hover:shadow-xl transition-all block">
       <div className="flex items-start justify-between mb-2">
-        <span className="text-slate-300"><SportIcon sport={event.event_type} size={20} /></span>
+        <span className="text-blue-500"><SportIcon sport={event.event_type} size={20} /></span>
         <div className="flex items-center gap-1.5">
           <span className={`text-xs px-2 py-0.5 rounded-full border ${ROLE_COLOR[role] || ROLE_COLOR.viewer}`}>{role}</span>
           <span className={`badge badge-${event.status} text-xs`}>{event.status}</span>
         </div>
       </div>
-      <h3 className="font-semibold text-white text-sm truncate">{event.name}</h3>
-      <p className="text-xs text-slate-500 mt-1 truncate">{event.location || 'Location TBD'}</p>
-      <p className="text-xs text-slate-500 mt-1">{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</p>
+      <h3 className="font-semibold text-gray-100 text-sm truncate">{event.name}</h3>
+      <p className="text-xs text-gray-600 mt-1 truncate">{event.location || 'Location TBD'}</p>
+      <p className="text-xs text-gray-500 mt-1">{event.start_date}{event.end_date ? ` – ${event.end_date}` : ''}</p>
     </Link>
   )
 }
@@ -120,7 +120,7 @@ function ViewerDashboard({ user }) {
   )
 
   if (!data) return (
-    <div className="text-center py-24 text-slate-400">Failed to load your dashboard.</div>
+    <div className="text-center py-24 text-gray-600">Failed to load your dashboard.</div>
   )
 
   const { my_events = [], my_participations = [] } = data
@@ -130,8 +130,8 @@ function ViewerDashboard({ user }) {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Welcome back, {user?.name}</h1>
-        <p className="text-slate-400 text-sm mt-1">
+        <h1 className="text-2xl font-bold text-gray-100">Welcome back, {user?.name}</h1>
+        <p className="text-gray-600 text-sm mt-1">
           {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
         </p>
       </div>
@@ -147,13 +147,13 @@ function ViewerDashboard({ user }) {
       {/* My events */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">My Events</h2>
-          <Link to="/events" className="text-sm text-blue-400 hover:underline">Browse more →</Link>
+          <h2 className="text-lg font-semibold text-gray-100">My Events</h2>
+          <Link to="/events" className="text-sm text-blue-600 hover:underline">Browse more →</Link>
         </div>
         {my_events.length === 0 ? (
           <div className="card p-8 text-center">
-            <div className="mb-3 text-slate-500 flex justify-center"><Ticket size={40} /></div>
-            <p className="text-slate-400 text-sm">You haven't joined any events yet.</p>
+            <div className="mb-3 text-gray-500 flex justify-center"><Ticket size={40} /></div>
+            <p className="text-gray-600 text-sm">You haven't joined any events yet.</p>
             <Link to="/events" className="btn-primary mt-4 inline-block">Browse Events</Link>
           </div>
         ) : (
@@ -229,8 +229,8 @@ function AdminDashboard({ user }) {
         <div className="space-y-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-white">Welcome back, {user?.name}</h1>
-              <p className="text-slate-400 text-sm mt-1">
+              <h1 className="text-2xl font-bold text-gray-100">Welcome back, {user?.name}</h1>
+              <p className="text-gray-600 text-sm mt-1">
                 {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
             </div>
@@ -245,7 +245,7 @@ function AdminDashboard({ user }) {
 
           {active.length > 0 && (
             <section>
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-100 mb-4 flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                 Live Events
               </h2>
@@ -258,8 +258,8 @@ function AdminDashboard({ user }) {
           {upcoming.length > 0 && (
             <section>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">Upcoming Events</h2>
-                <Link to="/events" className="text-sm text-blue-400 hover:underline">View all →</Link>
+                <h2 className="text-lg font-semibold text-gray-100">Upcoming Events</h2>
+                <Link to="/events" className="text-sm text-blue-600 hover:underline">View all →</Link>
               </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {upcoming.slice(0, 3).map((ev) => <EventCard key={ev.id} event={ev} />)}
@@ -269,7 +269,7 @@ function AdminDashboard({ user }) {
 
           {completed.length > 0 && upcoming.length === 0 && active.length === 0 && (
             <section>
-              <h2 className="text-lg font-semibold text-white mb-4">Recent Events</h2>
+              <h2 className="text-lg font-semibold text-gray-100 mb-4">Recent Events</h2>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {completed.slice(0, 3).map((ev) => <EventCard key={ev.id} event={ev} />)}
               </div>
@@ -278,9 +278,9 @@ function AdminDashboard({ user }) {
 
           {events.length === 0 && (
             <div className="text-center py-24">
-              <div className="mb-4 text-slate-500 flex justify-center"><Building2 size={56} /></div>
-              <h3 className="text-xl font-semibold text-white">No events yet</h3>
-              <p className="text-slate-400 mt-2 mb-6">Create your first sports event to get started.</p>
+              <div className="mb-4 text-gray-500 flex justify-center"><Building2 size={56} /></div>
+              <h3 className="text-xl font-semibold text-gray-100">No events yet</h3>
+              <p className="text-gray-600 mt-2 mb-6">Create your first sports event to get started.</p>
               <div className="flex gap-3 justify-center">
                 <button className="btn-primary" onClick={() => setShowCreateModal(true)}>Create Event</button>
                 <Link to="/events" className="btn-secondary">Browse Events</Link>

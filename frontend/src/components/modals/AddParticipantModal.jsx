@@ -385,7 +385,7 @@ export default function AddParticipantModal({ gameId, game, teams, members = [],
                   {/* Sport / bib / nationality — new participants only */}
                   {addingNew && (
                     <>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="label">Sport / Event</label>
                           <input className="input" value={form.sport} onChange={set('sport')} placeholder="100m Sprint" />

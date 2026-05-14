@@ -3,6 +3,17 @@ import { createGame, updateGame } from '../../services/api'
 import toast from 'react-hot-toast'
 import Modal from './Modal'
 import { Search, PersonStanding, Users2 } from 'lucide-react'
+import { ageLabel } from '../../utils/sportIcons'
+
+function toDatetimeLocal(iso) {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch { return '' }
+}
 
 const GAME_TYPES = [
   'race', 'match', 'tournament', 'relay', 'heat', 'final', 'semifinal', 'quarterfinal',
@@ -95,11 +106,11 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
     description:    source?.description    || '',
     game_type:      source?.game_type      || 'match',
     game_mode:      source?.game_mode      || 'individual',
-    scheduled_at:   source?.scheduled_at   || '',
-    venue:          source?.venue          || '',
-    age_restricted: source?.age_restricted || false,
-    age_from:       source?.age_from       || '',
-    age_to:         source?.age_to         || '',
+    scheduled_at:   toDatetimeLocal(source?.scheduled_at),
+    venue:          source?.venue          ?? '',
+    age_restricted: source?.age_restricted ?? false,
+    age_from:       source?.age_from       ?? '',
+    age_to:         source?.age_to         ?? '',
   })
   const [selectedTeamIds, setSelectedTeamIds] = useState(new Set(source?.team_ids || []))
   const [saving, setSaving] = useState(false)
@@ -114,15 +125,19 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (form.age_restricted) {
-      const from = parseInt(form.age_from, 10)
-      const to   = parseInt(form.age_to, 10)
-      if (!form.age_from || !form.age_to) {
-        toast.error('Age From and Age To are required when age range is enabled')
+      const hasFrom = form.age_from !== '' && form.age_from !== null && form.age_from !== undefined
+      const hasTo   = form.age_to   !== '' && form.age_to   !== null && form.age_to   !== undefined
+      if (!hasFrom && !hasTo) {
+        toast.error('Provide at least Age From or Age To when age restriction is enabled')
         return
       }
-      if (from >= to) {
-        toast.error('Age From must be less than Age To')
-        return
+      if (hasFrom && hasTo) {
+        const from = parseInt(form.age_from, 10)
+        const to   = parseInt(form.age_to, 10)
+        if (from >= to) {
+          toast.error('Age From must be less than Age To')
+          return
+        }
       }
     }
 
@@ -141,7 +156,7 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
         return true
       })
       if (conflict) {
-        const ageNote = form.age_restricted ? ` (age ${ageFromInt}–${ageToInt})` : ''
+        const ageNote = form.age_restricted ? ` (${ageLabel(ageFromInt, ageToInt)})` : ''
         toast.error(
           `A "${conflict.game_type}" ${conflict.game_mode} game named "${conflict.name}"${ageNote} already exists.`,
           { duration: 4000 }
@@ -214,7 +229,7 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
         </div>
 
         {/* Schedule & Venue */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="label">Scheduled Date & Time</label>
             <input className="input" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
@@ -237,33 +252,38 @@ export default function CreateGameModal({ eventId, game, duplicateFrom = null, g
             <span className="text-sm font-medium text-slate-300">Apply age range restriction</span>
           </label>
           {form.age_restricted && (
-            <div className="grid grid-cols-2 gap-3 pl-6">
-              <div>
-                <label className="label">Age From *</label>
-                <input
-                  className="input"
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={form.age_from}
-                  onChange={set('age_from')}
-                  required
-                  placeholder="e.g. 18"
-                />
+            <div className="pl-6 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Age From</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={form.age_from}
+                    onChange={set('age_from')}
+                    placeholder="e.g. 18"
+                  />
+                </div>
+                <div>
+                  <label className="label">Age To</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={form.age_to}
+                    onChange={set('age_to')}
+                    placeholder="e.g. 35"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="label">Age To *</label>
-                <input
-                  className="input"
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={form.age_to}
-                  onChange={set('age_to')}
-                  required
-                  placeholder="e.g. 35"
-                />
-              </div>
+              {(() => {
+                const label = ageLabel(form.age_from, form.age_to)
+                if (!label) return <p className="text-xs text-slate-500">At least one of Age From or Age To is required.</p>
+                return <p className="text-xs text-blue-400 font-medium">{label}</p>
+              })()}
             </div>
           )}
         </div>
